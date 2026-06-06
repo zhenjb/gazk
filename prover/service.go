@@ -10,7 +10,7 @@ import (
 	"github.com/zhenjb/gazk/contract"
 )
 
-const VerificationKeyID = "gazk-smoke-v1"
+const VerificationKeyID = "gazk-balance-smoke-v1"
 
 var (
 	ErrInvalidProveRequest = errors.New("invalid prove request")
@@ -38,7 +38,7 @@ func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error)
 
 	publicInputs := BuildPublicInputs(req.SettlementUpdate, req.BatchCommitments)
 
-	proof, err := buildSmokeProof(req, publicInputs)
+	proof, err := buildBalanceTransitionProof(req)
 	if err != nil {
 		return contract.ProofBundle{}, err
 	}

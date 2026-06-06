@@ -92,7 +92,7 @@ Current non-goals:
       "0xnullifiersRoot",
       "0xwithdrawOutputsRoot"
     ],
-    "verificationKeyId": "gazk-smoke-v1"
+    "verificationKeyId": "gazk-balance-smoke-v1"
   }
 }
 ```
@@ -142,7 +142,7 @@ Expected response:
 {
   "service": "gazk",
   "status": "ok",
-  "verificationKeyId": "gazk-smoke-v1"
+  "verificationKeyId": "gazk-balance-smoke-v1"
 }
 ```
 
@@ -210,7 +210,7 @@ Expected response shape:
       "0xnullifiersRoot",
       "0xwithdrawOutputsRoot"
     ],
-    "verificationKeyId": "gazk-smoke-v1"
+    "verificationKeyId": "gazk-balance-smoke-v1"
   }
 }
 ```
@@ -263,7 +263,7 @@ curl -s -X POST http://localhost:8090/verify \
         "0xnullifiersRoot",
         "0xwithdrawOutputsRoot"
       ],
-      "verificationKeyId": "gazk-smoke-v1"
+      "verificationKeyId": "gazk-balance-smoke-v1"
     }
   }' | jq
 ```
