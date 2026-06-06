@@ -115,3 +115,111 @@ func TestHTTPProveReturnsProofBundleWithSixPublicInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTPVerifyAcceptsGeneratedProof(t *testing.T) {
+	handler := NewHTTPServer(prover.NewService()).Routes()
+
+	nullifier, err := prover.NullifierFor("mock-user-secret", "1")
+	if err != nil {
+		t.Fatalf("derive nullifier: %v", err)
+	}
+
+	destinationHash, err := prover.DestinationHashFor("cosmos1alice")
+	if err != nil {
+		t.Fatalf("derive destination hash: %v", err)
+	}
+
+	proveReq := contract.ProveRequest{
+		SettlementUpdate: contract.SettlementUpdate{
+			BatchID:      "batch-1",
+			OldStateRoot: "0xrootA",
+			NewStateRoot: "0xrootB",
+			Deposits: []contract.SettlementDeposit{
+				{
+					DepositID: "dep-1",
+					Owner:     "cosmos1alice",
+					Denom:     "uusdc",
+					Amount:    "100",
+				},
+			},
+			Withdrawals: []contract.SettlementWithdrawal{
+				{
+					WithdrawID:      "wd-1",
+					Owner:           "cosmos1alice",
+					Denom:           "uusdc",
+					Amount:          "40",
+					Destination:     "cosmos1alice",
+					DestinationHash: destinationHash,
+					Nullifier:       nullifier,
+				},
+			},
+		},
+		BatchCommitments: contract.BatchCommitments{
+			DepositsRoot:        "0xdepositsRoot",
+			WithdrawalsRoot:     "0xwithdrawalsRoot",
+			NullifiersRoot:      "0xnullifiersRoot",
+			WithdrawOutputsRoot: "0xwithdrawOutputsRoot",
+		},
+		Witness: contract.Witness{
+			Accounts: []contract.WitnessAccount{
+				{
+					Owner:      "cosmos1alice",
+					UserSecret: "mock-user-secret",
+					Nonce:      "1",
+					OldBalance: "0",
+					NewBalance: "60",
+				},
+			},
+		},
+	}
+
+	rawProve, err := json.Marshal(proveReq)
+	if err != nil {
+		t.Fatalf("marshal prove request: %v", err)
+	}
+
+	proveHTTPReq := httptest.NewRequest(http.MethodPost, "/prove", bytes.NewReader(rawProve))
+	proveHTTPReq.Header.Set("Content-Type", "application/json")
+
+	proveRec := httptest.NewRecorder()
+	handler.ServeHTTP(proveRec, proveHTTPReq)
+
+	if proveRec.Code != http.StatusOK {
+		t.Fatalf("expected prove status 200, got %d body=%s", proveRec.Code, proveRec.Body.String())
+	}
+
+	var proveResp contract.ProveResponse
+	if err := json.NewDecoder(proveRec.Body).Decode(&proveResp); err != nil {
+		t.Fatalf("decode prove response: %v", err)
+	}
+
+	verifyReq := contract.VerifyRequest{
+		SettlementUpdate: proveReq.SettlementUpdate,
+		BatchCommitments: proveReq.BatchCommitments,
+		ProofBundle:      proveResp.ProofBundle,
+	}
+
+	rawVerify, err := json.Marshal(verifyReq)
+	if err != nil {
+		t.Fatalf("marshal verify request: %v", err)
+	}
+
+	verifyHTTPReq := httptest.NewRequest(http.MethodPost, "/verify", bytes.NewReader(rawVerify))
+	verifyHTTPReq.Header.Set("Content-Type", "application/json")
+
+	verifyRec := httptest.NewRecorder()
+	handler.ServeHTTP(verifyRec, verifyHTTPReq)
+
+	if verifyRec.Code != http.StatusOK {
+		t.Fatalf("expected verify status 200, got %d body=%s", verifyRec.Code, verifyRec.Body.String())
+	}
+
+	var verifyResp contract.VerifyResponse
+	if err := json.NewDecoder(verifyRec.Body).Decode(&verifyResp); err != nil {
+		t.Fatalf("decode verify response: %v", err)
+	}
+
+	if !verifyResp.Valid {
+		t.Fatalf("expected verify valid=true, got error=%q", verifyResp.Error)
+	}
+}

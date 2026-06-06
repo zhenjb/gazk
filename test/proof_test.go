@@ -1,3 +1,6 @@
+//go:build legacy_online
+// +build legacy_online
+
 package test
 
 import (

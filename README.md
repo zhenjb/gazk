@@ -14,6 +14,7 @@ Current capabilities:
 - `GET /health`.
 - `POST /prove`.
 - `POST /verify`.
+- `POST /verify` verifies Groth16 proof bytes for the current balance smoke circuit.
 - `POST /prove` returns a `ProofBundle` with exactly 6 public inputs.
 - `POST /prove` validates nullifier binding against `userSecret` and `nonce`.
 - `POST /prove` validates destinationHash binding against `destination`.
@@ -219,7 +220,7 @@ Expected response shape:
 
 ### Verify proof
 
-Use the same `settlementUpdate` and `batchCommitments` plus the returned `proofBundle`.
+Use the same `settlementUpdate` and `batchCommitments` plus the returned `proofBundle`. The proof must be produced by the currently running `gazk` process because smoke proving/verifying keys are generated at startup.
 
 ```bash
 curl -s -X POST http://localhost:8090/verify \
@@ -391,3 +392,22 @@ The P4 adapter must preserve the public input order exactly.
 This repository is intentionally incremental.
 
 The first goal is contract compatibility with the current P3/P4 pending settlement flow. The real settlement constraints will replace the smoke proof internals step by step without changing the HTTP contract.
+
+### GAZK-07: Harden proof verification
+
+Status: done for the current smoke circuit.
+
+`POST /verify` now checks:
+
+    publicInputs length = 6
+    publicInputs match settlementUpdate + batchCommitments
+    publicInputs are non-empty 0x-prefixed values
+    verificationKeyId matches the current service
+    proof is valid 0x hex
+    proof deserializes as a Groth16 proof
+    Groth16 verification passes against the current balance smoke verifying key
+
+Current limitation:
+
+    Smoke proving/verifying keys are generated in-process at startup.
+    Proofs are not guaranteed to verify across service restarts until key artifacts are persisted.

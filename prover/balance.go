@@ -9,6 +9,7 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 
@@ -25,16 +26,18 @@ import (
 //
 //	0 + 100 == 60 + 40
 //
-// This is not the final settlement circuit yet. It is the first real gnark
-// constraint that moves gazk beyond hash-only smoke proof generation.
+// Current smoke design:
+//   - all circuit variables are private;
+//   - the external GANC ProofBundle still carries the 6 settlement public inputs;
+//   - /verify checks those 6 public inputs at service level, then verifies the
+//     Groth16 proof against an empty gnark public witness.
+//
+// Later versions will bind the 6 settlement public inputs inside the circuit.
 type BalanceTransitionCircuit struct {
 	OldBalance     frontend.Variable
 	DepositAmount  frontend.Variable
 	WithdrawAmount frontend.Variable
-
-	// NewBalance is public only for this smoke circuit.
-	// The external GANC ProofBundle publicInputs remain the 6 settlement roots.
-	NewBalance frontend.Variable `gnark:",public"`
+	NewBalance     frontend.Variable
 }
 
 func (c *BalanceTransitionCircuit) Define(api frontend.API) error {
@@ -43,6 +46,32 @@ func (c *BalanceTransitionCircuit) Define(api frontend.API) error {
 
 	api.AssertIsEqual(left, right)
 	return nil
+}
+
+type BalanceTransitionEngine struct {
+	ccs        constraint.ConstraintSystem
+	provingKey groth16.ProvingKey
+	verifyKey  groth16.VerifyingKey
+}
+
+func NewBalanceTransitionEngine() (*BalanceTransitionEngine, error) {
+	var circuit BalanceTransitionCircuit
+
+	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
+	if err != nil {
+		return nil, fmt.Errorf("compile balance transition circuit: %w", err)
+	}
+
+	provingKey, verifyKey, err := groth16.Setup(ccs)
+	if err != nil {
+		return nil, fmt.Errorf("setup balance transition circuit: %w", err)
+	}
+
+	return &BalanceTransitionEngine{
+		ccs:        ccs,
+		provingKey: provingKey,
+		verifyKey:  verifyKey,
+	}, nil
 }
 
 type balanceTransitionInput struct {
@@ -131,22 +160,10 @@ func buildBalanceTransitionInput(req contract.ProveRequest) (balanceTransitionIn
 	}, nil
 }
 
-func buildBalanceTransitionProof(req contract.ProveRequest) (string, error) {
+func (e *BalanceTransitionEngine) BuildProof(req contract.ProveRequest) (string, error) {
 	input, err := buildBalanceTransitionInput(req)
 	if err != nil {
 		return "", err
-	}
-
-	var circuit BalanceTransitionCircuit
-
-	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
-	if err != nil {
-		return "", fmt.Errorf("compile balance transition circuit: %w", err)
-	}
-
-	provingKey, _, err := groth16.Setup(ccs)
-	if err != nil {
-		return "", fmt.Errorf("setup balance transition circuit: %w", err)
 	}
 
 	assignment := BalanceTransitionCircuit{
@@ -161,7 +178,7 @@ func buildBalanceTransitionProof(req contract.ProveRequest) (string, error) {
 		return "", fmt.Errorf("build balance transition witness: %w", err)
 	}
 
-	proof, err := groth16.Prove(ccs, provingKey, witness)
+	proof, err := groth16.Prove(e.ccs, e.provingKey, witness)
 	if err != nil {
 		return "", fmt.Errorf("prove balance transition: %w", err)
 	}
@@ -172,6 +189,39 @@ func buildBalanceTransitionProof(req contract.ProveRequest) (string, error) {
 	}
 
 	return "0x" + hex.EncodeToString(buf.Bytes()), nil
+}
+
+func (e *BalanceTransitionEngine) VerifyProof(proofHex string) error {
+	raw := strings.TrimSpace(proofHex)
+	if raw == "" {
+		return fmt.Errorf("%w: proof is empty", ErrInvalidProofBundle)
+	}
+
+	if !strings.HasPrefix(raw, "0x") {
+		return fmt.Errorf("%w: proof must have 0x prefix", ErrInvalidProofBundle)
+	}
+
+	proofBytes, err := hex.DecodeString(strings.TrimPrefix(raw, "0x"))
+	if err != nil {
+		return fmt.Errorf("%w: proof is not valid hex: %v", ErrInvalidProofBundle, err)
+	}
+
+	proof := groth16.NewProof(ecc.BN254)
+	if _, err := proof.ReadFrom(bytes.NewReader(proofBytes)); err != nil {
+		return fmt.Errorf("%w: cannot deserialize Groth16 proof: %v", ErrInvalidProofBundle, err)
+	}
+
+	var publicAssignment BalanceTransitionCircuit
+	publicWitness, err := frontend.NewWitness(&publicAssignment, ecc.BN254.ScalarField(), frontend.PublicOnly())
+	if err != nil {
+		return fmt.Errorf("build balance transition public witness: %w", err)
+	}
+
+	if err := groth16.Verify(proof, e.verifyKey, publicWitness); err != nil {
+		return fmt.Errorf("%w: Groth16 verification failed: %v", ErrInvalidProofBundle, err)
+	}
+
+	return nil
 }
 
 func parseNonNegativeDecimal(value string, field string) (*big.Int, error) {

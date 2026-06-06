@@ -1,6 +1,7 @@
 package prover
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/zhenjb/gazk/contract"
@@ -24,6 +25,64 @@ func TestProveValidAliceBalanceTransition(t *testing.T) {
 
 	if len(resp.PublicInputs) != 6 {
 		t.Fatalf("expected 6 public inputs, got %d", len(resp.PublicInputs))
+	}
+}
+
+func TestVerifyAcceptsGeneratedProof(t *testing.T) {
+	service := NewService()
+
+	proofBundle, err := service.Prove(validAliceProveRequest())
+	if err != nil {
+		t.Fatalf("prove valid Alice transition: %v", err)
+	}
+
+	err = service.Verify(contract.VerifyRequest{
+		SettlementUpdate: validAliceProveRequest().SettlementUpdate,
+		BatchCommitments: validAliceProveRequest().BatchCommitments,
+		ProofBundle:      proofBundle,
+	})
+	if err != nil {
+		t.Fatalf("verify generated proof: %v", err)
+	}
+}
+
+func TestVerifyRejectsTamperedProofBytes(t *testing.T) {
+	service := NewService()
+
+	proofBundle, err := service.Prove(validAliceProveRequest())
+	if err != nil {
+		t.Fatalf("prove valid Alice transition: %v", err)
+	}
+
+	proofBundle.Proof = "0x" + strings.Repeat("00", (len(proofBundle.Proof)-2)/2)
+
+	err = service.Verify(contract.VerifyRequest{
+		SettlementUpdate: validAliceProveRequest().SettlementUpdate,
+		BatchCommitments: validAliceProveRequest().BatchCommitments,
+		ProofBundle:      proofBundle,
+	})
+	if err == nil {
+		t.Fatalf("expected tampered proof to fail")
+	}
+}
+
+func TestVerifyRejectsPublicInputMismatch(t *testing.T) {
+	service := NewService()
+
+	proofBundle, err := service.Prove(validAliceProveRequest())
+	if err != nil {
+		t.Fatalf("prove valid Alice transition: %v", err)
+	}
+
+	proofBundle.PublicInputs[1] = "0xtamperedRoot"
+
+	err = service.Verify(contract.VerifyRequest{
+		SettlementUpdate: validAliceProveRequest().SettlementUpdate,
+		BatchCommitments: validAliceProveRequest().BatchCommitments,
+		ProofBundle:      proofBundle,
+	})
+	if err == nil {
+		t.Fatalf("expected public input mismatch to fail")
 	}
 }
 

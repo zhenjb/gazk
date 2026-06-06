@@ -3,6 +3,7 @@ package prover
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/zhenjb/gazk/contract"
 )
@@ -22,15 +23,28 @@ var (
 // - runs a real gnark Groth16 smoke circuit for balance transition
 // - validates nullifier binding at service layer using the current GANC placeholder hash
 // - validates destinationHash binding at service layer using the current GANC placeholder hash
+// - verifies Groth16 proof bytes in /verify
 //
-// Later stages will add circuit-level nullifier, destination hash, and state-root constraints.
-type Service struct{}
+// Later stages will bind nullifier, destination hash, state roots, and the
+// 6 settlement public inputs inside the circuit.
+type Service struct {
+	balanceEngine *BalanceTransitionEngine
+	engineErr     error
+}
 
 func NewService() *Service {
-	return &Service{}
+	engine, err := NewBalanceTransitionEngine()
+	return &Service{
+		balanceEngine: engine,
+		engineErr:     err,
+	}
 }
 
 func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error) {
+	if s.engineErr != nil {
+		return contract.ProofBundle{}, s.engineErr
+	}
+
 	if err := validateProveRequest(req); err != nil {
 		return contract.ProofBundle{}, err
 	}
@@ -45,7 +59,7 @@ func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error)
 
 	publicInputs := BuildPublicInputs(req.SettlementUpdate, req.BatchCommitments)
 
-	proof, err := buildBalanceTransitionProof(req)
+	proof, err := s.balanceEngine.BuildProof(req)
 	if err != nil {
 		return contract.ProofBundle{}, err
 	}
@@ -58,6 +72,10 @@ func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error)
 }
 
 func (s *Service) Verify(req contract.VerifyRequest) error {
+	if s.engineErr != nil {
+		return s.engineErr
+	}
+
 	expectedPublicInputs := BuildPublicInputs(req.SettlementUpdate, req.BatchCommitments)
 
 	if len(req.ProofBundle.PublicInputs) != 6 {
@@ -76,6 +94,15 @@ func (s *Service) Verify(req contract.VerifyRequest) error {
 		}
 	}
 
+	for i, value := range req.ProofBundle.PublicInputs {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%w: publicInputs[%d] is empty", ErrInvalidProofBundle, i)
+		}
+		if !strings.HasPrefix(value, "0x") {
+			return fmt.Errorf("%w: publicInputs[%d] must have 0x prefix", ErrInvalidProofBundle, i)
+		}
+	}
+
 	if req.ProofBundle.VerificationKeyID != VerificationKeyID {
 		return fmt.Errorf(
 			"%w: verificationKeyId mismatch: got %q, expected %q",
@@ -85,8 +112,8 @@ func (s *Service) Verify(req contract.VerifyRequest) error {
 		)
 	}
 
-	if req.ProofBundle.Proof == "" {
-		return fmt.Errorf("%w: proof is empty", ErrInvalidProofBundle)
+	if err := s.balanceEngine.VerifyProof(req.ProofBundle.Proof); err != nil {
+		return err
 	}
 
 	return nil
