@@ -51,6 +51,18 @@ func TestProveRejectsInvalidNullifier(t *testing.T) {
 	}
 }
 
+func TestProveRejectsInvalidDestinationHash(t *testing.T) {
+	service := NewService()
+
+	req := validAliceProveRequest()
+	req.SettlementUpdate.Withdrawals[0].DestinationHash = "0xbaddestinationhash"
+
+	_, err := service.Prove(req)
+	if err == nil {
+		t.Fatalf("expected invalid destinationHash to fail")
+	}
+}
+
 func TestNullifierForMatchesCanonicalAliceVector(t *testing.T) {
 	got, err := NullifierFor("mock-user-secret", "1")
 	if err != nil {
@@ -63,8 +75,25 @@ func TestNullifierForMatchesCanonicalAliceVector(t *testing.T) {
 	}
 }
 
+func TestDestinationHashForMatchesCanonicalAliceVector(t *testing.T) {
+	got, err := DestinationHashFor("cosmos1alice")
+	if err != nil {
+		t.Fatalf("derive destination hash: %v", err)
+	}
+
+	want := "0xa75ac956249df4c45b83281c5af6187c59df9709fd1c25b5e61b12d71a8eb417"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
 func validAliceProveRequest() contract.ProveRequest {
 	nullifier, err := NullifierFor("mock-user-secret", "1")
+	if err != nil {
+		panic(err)
+	}
+
+	destinationHash, err := DestinationHashFor("cosmos1alice")
 	if err != nil {
 		panic(err)
 	}
@@ -89,7 +118,7 @@ func validAliceProveRequest() contract.ProveRequest {
 					Denom:           "uusdc",
 					Amount:          "40",
 					Destination:     "cosmos1alice",
-					DestinationHash: "0xdestination",
+					DestinationHash: destinationHash,
 					Nullifier:       nullifier,
 				},
 			},

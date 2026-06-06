@@ -19,6 +19,11 @@ func TestHTTPProveReturnsProofBundleWithSixPublicInputs(t *testing.T) {
 		t.Fatalf("derive nullifier: %v", err)
 	}
 
+	destinationHash, err := prover.DestinationHashFor("cosmos1alice")
+	if err != nil {
+		t.Fatalf("derive destination hash: %v", err)
+	}
+
 	reqBody := contract.ProveRequest{
 		SettlementUpdate: contract.SettlementUpdate{
 			BatchID:      "batch-1",
@@ -39,7 +44,7 @@ func TestHTTPProveReturnsProofBundleWithSixPublicInputs(t *testing.T) {
 					Denom:           "uusdc",
 					Amount:          "40",
 					Destination:     "cosmos1alice",
-					DestinationHash: "0xdestination",
+					DestinationHash: destinationHash,
 					Nullifier:       nullifier,
 				},
 			},

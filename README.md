@@ -16,6 +16,7 @@ Current capabilities:
 - `POST /verify`.
 - `POST /prove` returns a `ProofBundle` with exactly 6 public inputs.
 - `POST /prove` validates nullifier binding against `userSecret` and `nonce`.
+- `POST /prove` validates destinationHash binding against `destination`.
 - The current proof is a deterministic smoke placeholder.
 - Settlement-specific gnark constraints will be added incrementally.
 
@@ -346,11 +347,13 @@ This matches the current GANC placeholder hash. Circuit-level nullifier binding 
 
 ### GAZK-04: Destination hash binding
 
-Bind the withdrawal destination to the public withdrawal output hash:
+Status: service-level validation done.
 
-```txt
-destinationHash = Hash(destination)
-```
+Current binding:
+
+    destinationHash = SHA256("zkdex/withdrawAddr/v0|destination")
+
+This matches the current GANC placeholder hash. Circuit-level destination hash binding will be added after the final circuit-friendly hash is selected.
 
 ### GAZK-05: State root constraint
 

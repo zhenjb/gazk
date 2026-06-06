@@ -21,6 +21,7 @@ var (
 // - emits final ProofBundle shape
 // - runs a real gnark Groth16 smoke circuit for balance transition
 // - validates nullifier binding at service layer using the current GANC placeholder hash
+// - validates destinationHash binding at service layer using the current GANC placeholder hash
 //
 // Later stages will add circuit-level nullifier, destination hash, and state-root constraints.
 type Service struct{}
@@ -35,6 +36,10 @@ func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error)
 	}
 
 	if err := validateNullifierBinding(req); err != nil {
+		return contract.ProofBundle{}, err
+	}
+
+	if err := validateDestinationHashBinding(req); err != nil {
 		return contract.ProofBundle{}, err
 	}
 
