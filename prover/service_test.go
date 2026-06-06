@@ -1,6 +1,7 @@
 package prover
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -199,5 +200,89 @@ func validAliceProveRequest() contract.ProveRequest {
 				},
 			},
 		},
+	}
+}
+
+func TestProveRejectsInvalidSettlementPublicFields(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*contract.ProveRequest)
+	}{
+		{
+			name: "oldStateRoot missing prefix",
+			mutate: func(req *contract.ProveRequest) {
+				req.SettlementUpdate.OldStateRoot = "rootA"
+			},
+		},
+		{
+			name: "newStateRoot empty hex",
+			mutate: func(req *contract.ProveRequest) {
+				req.SettlementUpdate.NewStateRoot = "0x"
+			},
+		},
+		{
+			name: "depositsRoot missing prefix",
+			mutate: func(req *contract.ProveRequest) {
+				req.BatchCommitments.DepositsRoot = "depositsRoot"
+			},
+		},
+		{
+			name: "withdrawalsRoot missing prefix",
+			mutate: func(req *contract.ProveRequest) {
+				req.BatchCommitments.WithdrawalsRoot = "withdrawalsRoot"
+			},
+		},
+		{
+			name: "nullifiersRoot missing prefix",
+			mutate: func(req *contract.ProveRequest) {
+				req.BatchCommitments.NullifiersRoot = "nullifiersRoot"
+			},
+		},
+		{
+			name: "withdrawOutputsRoot missing prefix",
+			mutate: func(req *contract.ProveRequest) {
+				req.BatchCommitments.WithdrawOutputsRoot = "withdrawOutputsRoot"
+			},
+		},
+	}
+
+	service := NewService()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := validAliceProveRequest()
+			tt.mutate(&req)
+
+			_, err := service.Prove(req)
+			if err == nil {
+				t.Fatalf("expected prove to reject invalid settlement public field")
+			}
+		})
+	}
+}
+
+func TestVerifyRejectsEveryPublicInputMismatch(t *testing.T) {
+	service := NewService()
+
+	proofBundle, err := service.Prove(validAliceProveRequest())
+	if err != nil {
+		t.Fatalf("prove valid Alice transition: %v", err)
+	}
+
+	for i := range proofBundle.PublicInputs {
+		t.Run(fmt.Sprintf("publicInputs[%d]", i), func(t *testing.T) {
+			tampered := proofBundle
+			tampered.PublicInputs = append([]string(nil), proofBundle.PublicInputs...)
+			tampered.PublicInputs[i] = "0xtampered"
+
+			err := service.Verify(contract.VerifyRequest{
+				SettlementUpdate: validAliceProveRequest().SettlementUpdate,
+				BatchCommitments: validAliceProveRequest().BatchCommitments,
+				ProofBundle:      tampered,
+			})
+			if err == nil {
+				t.Fatalf("expected verify to reject tampered publicInputs[%d]", i)
+			}
+		})
 	}
 }

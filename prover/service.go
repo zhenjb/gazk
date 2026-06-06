@@ -3,7 +3,6 @@ package prover
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/zhenjb/gazk/contract"
 )
@@ -49,6 +48,10 @@ func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error)
 		return contract.ProofBundle{}, err
 	}
 
+	if err := validateSettlementPublicFields(req.SettlementUpdate, req.BatchCommitments); err != nil {
+		return contract.ProofBundle{}, err
+	}
+
 	if err := validateNullifierBinding(req); err != nil {
 		return contract.ProofBundle{}, err
 	}
@@ -76,10 +79,14 @@ func (s *Service) Verify(req contract.VerifyRequest) error {
 		return s.engineErr
 	}
 
+	if err := validateSettlementPublicFields(req.SettlementUpdate, req.BatchCommitments); err != nil {
+		return err
+	}
+
 	expectedPublicInputs := BuildPublicInputs(req.SettlementUpdate, req.BatchCommitments)
 
-	if len(req.ProofBundle.PublicInputs) != 6 {
-		return fmt.Errorf("%w: publicInputs must contain 6 values", ErrInvalidProofBundle)
+	if err := validateProofBundlePublicInputs(req.ProofBundle.PublicInputs); err != nil {
+		return err
 	}
 
 	for i := range expectedPublicInputs {
@@ -91,15 +98,6 @@ func (s *Service) Verify(req contract.VerifyRequest) error {
 				req.ProofBundle.PublicInputs[i],
 				expectedPublicInputs[i],
 			)
-		}
-	}
-
-	for i, value := range req.ProofBundle.PublicInputs {
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("%w: publicInputs[%d] is empty", ErrInvalidProofBundle, i)
-		}
-		if !strings.HasPrefix(value, "0x") {
-			return fmt.Errorf("%w: publicInputs[%d] must have 0x prefix", ErrInvalidProofBundle, i)
 		}
 	}
 
