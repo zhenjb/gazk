@@ -2,7 +2,7 @@ package core
 
 import (
 	"fmt"
-	"gazk/circuit"
+	"github.com/zhenjb/gazk/circuit"
 	"io"
 	"os"
 	"path/filepath"

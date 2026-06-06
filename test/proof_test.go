@@ -3,7 +3,7 @@ package test
 import (
 	"bufio"
 	"fmt"
-	"gazk/core"
+	"github.com/zhenjb/gazk/core"
 	"net"
 	"os"
 	"strings"

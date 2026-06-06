@@ -1,4 +1,4 @@
-module gazk
+module github.com/zhenjb/gazk
 
 go 1.25.7
 
