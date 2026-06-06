@@ -14,6 +14,11 @@ import (
 func TestHTTPProveReturnsProofBundleWithSixPublicInputs(t *testing.T) {
 	handler := NewHTTPServer(prover.NewService()).Routes()
 
+	nullifier, err := prover.NullifierFor("mock-user-secret", "1")
+	if err != nil {
+		t.Fatalf("derive nullifier: %v", err)
+	}
+
 	reqBody := contract.ProveRequest{
 		SettlementUpdate: contract.SettlementUpdate{
 			BatchID:      "batch-1",
@@ -35,7 +40,7 @@ func TestHTTPProveReturnsProofBundleWithSixPublicInputs(t *testing.T) {
 					Amount:          "40",
 					Destination:     "cosmos1alice",
 					DestinationHash: "0xdestination",
-					Nullifier:       "0xnullifier",
+					Nullifier:       nullifier,
 				},
 			},
 		},

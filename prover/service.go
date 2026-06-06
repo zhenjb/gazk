@@ -1,9 +1,6 @@
 package prover
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -20,11 +17,12 @@ var (
 // Service is the P2 prover boundary.
 //
 // Current stage:
-// - contract-compatible smoke prover
+// - contract-compatible prover
 // - emits final ProofBundle shape
-// - uses deterministic digest as placeholder proof
+// - runs a real gnark Groth16 smoke circuit for balance transition
+// - validates nullifier binding at service layer using the current GANC placeholder hash
 //
-// Later stages replace buildSmokeProof with real gnark proving.
+// Later stages will add circuit-level nullifier, destination hash, and state-root constraints.
 type Service struct{}
 
 func NewService() *Service {
@@ -33,6 +31,10 @@ func NewService() *Service {
 
 func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error) {
 	if err := validateProveRequest(req); err != nil {
+		return contract.ProofBundle{}, err
+	}
+
+	if err := validateNullifierBinding(req); err != nil {
 		return contract.ProofBundle{}, err
 	}
 
@@ -133,26 +135,4 @@ func validateProveRequest(req contract.ProveRequest) error {
 	}
 
 	return nil
-}
-
-func buildSmokeProof(req contract.ProveRequest, publicInputs []string) (string, error) {
-	payload := struct {
-		SettlementUpdate contract.SettlementUpdate `json:"settlementUpdate"`
-		BatchCommitments contract.BatchCommitments `json:"batchCommitments"`
-		Witness          contract.Witness          `json:"witness"`
-		PublicInputs     []string                  `json:"publicInputs"`
-	}{
-		SettlementUpdate: req.SettlementUpdate,
-		BatchCommitments: req.BatchCommitments,
-		Witness:          req.Witness,
-		PublicInputs:     publicInputs,
-	}
-
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	sum := sha256.Sum256(raw)
-	return "0x" + hex.EncodeToString(sum[:]), nil
 }

@@ -15,6 +15,7 @@ Current capabilities:
 - `POST /prove`.
 - `POST /verify`.
 - `POST /prove` returns a `ProofBundle` with exactly 6 public inputs.
+- `POST /prove` validates nullifier binding against `userSecret` and `nonce`.
 - The current proof is a deterministic smoke placeholder.
 - Settlement-specific gnark constraints will be added incrementally.
 
@@ -333,13 +334,15 @@ Canonical Alice vector:
 0 + 100 - 40 = 60
 ```
 
-### GAZK-03: Nullifier constraint
+### GAZK-03: Nullifier binding
 
-Bind the withdrawal nullifier to private witness values:
+Status: service-level validation done.
 
-```txt
-nullifier = Hash(userSecret, nonce)
-```
+Current binding:
+
+    nullifier = SHA256("zkdex/nullifier/v0|userSecret|nonce")
+
+This matches the current GANC placeholder hash. Circuit-level nullifier binding will be added after the final circuit-friendly hash is selected.
 
 ### GAZK-04: Destination hash binding
 

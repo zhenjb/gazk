@@ -39,7 +39,36 @@ func TestProveRejectsInvalidBalanceTransition(t *testing.T) {
 	}
 }
 
+func TestProveRejectsInvalidNullifier(t *testing.T) {
+	service := NewService()
+
+	req := validAliceProveRequest()
+	req.SettlementUpdate.Withdrawals[0].Nullifier = "0xbadnullifier"
+
+	_, err := service.Prove(req)
+	if err == nil {
+		t.Fatalf("expected invalid nullifier to fail")
+	}
+}
+
+func TestNullifierForMatchesCanonicalAliceVector(t *testing.T) {
+	got, err := NullifierFor("mock-user-secret", "1")
+	if err != nil {
+		t.Fatalf("derive nullifier: %v", err)
+	}
+
+	want := "0xac441258225277bef8aa13fc03cf4d9e8f10549fbdca6b860c89dd0c4148ea91"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
 func validAliceProveRequest() contract.ProveRequest {
+	nullifier, err := NullifierFor("mock-user-secret", "1")
+	if err != nil {
+		panic(err)
+	}
+
 	return contract.ProveRequest{
 		SettlementUpdate: contract.SettlementUpdate{
 			BatchID:      "batch-1",
@@ -61,7 +90,7 @@ func validAliceProveRequest() contract.ProveRequest {
 					Amount:          "40",
 					Destination:     "cosmos1alice",
 					DestinationHash: "0xdestination",
-					Nullifier:       "0xnullifier",
+					Nullifier:       nullifier,
 				},
 			},
 		},
