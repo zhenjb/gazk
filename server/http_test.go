@@ -223,3 +223,28 @@ func TestHTTPVerifyAcceptsGeneratedProof(t *testing.T) {
 		t.Fatalf("expected verify valid=true, got error=%q", verifyResp.Error)
 	}
 }
+
+func TestHTTPHealthExposesHashMode(t *testing.T) {
+	handler := NewHTTPServer(prover.NewServiceWithHashMode("")).Routes()
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if resp["hashMode"] != prover.HashModeV0SHA256.String() {
+		t.Fatalf("expected hashMode=%q, got %q", prover.HashModeV0SHA256.String(), resp["hashMode"])
+	}
+
+	if resp["hashV1Id"] != prover.HashV1ID {
+		t.Fatalf("expected hashV1Id=%q, got %q", prover.HashV1ID, resp["hashV1Id"])
+	}
+}

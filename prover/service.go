@@ -3,6 +3,7 @@ package prover
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/zhenjb/gazk/contract"
 )
@@ -23,23 +24,45 @@ var (
 // - validates nullifier binding at service layer using the current GANC placeholder hash
 // - validates destinationHash binding at service layer using the current GANC placeholder hash
 // - verifies Groth16 proof bytes in /verify
+// - exposes hash mode contract; default remains v0-sha256 for ganc-sys compatibility
 //
 // Later stages will bind nullifier, destination hash, state roots, and the
 // 6 settlement public inputs inside the circuit.
 type Service struct {
 	balanceEngine *BalanceTransitionEngine
 	engineErr     error
+	hashMode      HashMode
+	hashModeErr   error
 }
 
 func NewService() *Service {
+	return NewServiceWithHashMode(os.Getenv("GAZK_HASH_MODE"))
+}
+
+func NewServiceWithHashMode(rawHashMode string) *Service {
+	mode, modeErr := ParseHashMode(rawHashMode)
+
 	engine, err := NewBalanceTransitionEngine()
 	return &Service{
 		balanceEngine: engine,
 		engineErr:     err,
+		hashMode:      mode,
+		hashModeErr:   modeErr,
 	}
 }
 
+func (s *Service) HashMode() HashMode {
+	if s.hashMode == "" {
+		return DefaultHashMode
+	}
+	return s.hashMode
+}
+
 func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error) {
+	if s.hashModeErr != nil {
+		return contract.ProofBundle{}, s.hashModeErr
+	}
+
 	if s.engineErr != nil {
 		return contract.ProofBundle{}, s.engineErr
 	}
@@ -52,11 +75,7 @@ func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error)
 		return contract.ProofBundle{}, err
 	}
 
-	if err := validateNullifierBinding(req); err != nil {
-		return contract.ProofBundle{}, err
-	}
-
-	if err := validateDestinationHashBinding(req); err != nil {
+	if err := s.validateHashBindings(req); err != nil {
 		return contract.ProofBundle{}, err
 	}
 
@@ -75,6 +94,10 @@ func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error)
 }
 
 func (s *Service) Verify(req contract.VerifyRequest) error {
+	if s.hashModeErr != nil {
+		return s.hashModeErr
+	}
+
 	if s.engineErr != nil {
 		return s.engineErr
 	}
@@ -115,6 +138,28 @@ func (s *Service) Verify(req contract.VerifyRequest) error {
 	}
 
 	return nil
+}
+
+func (s *Service) validateHashBindings(req contract.ProveRequest) error {
+	switch s.HashMode() {
+	case HashModeV0SHA256:
+		if err := validateNullifierBinding(req); err != nil {
+			return err
+		}
+		if err := validateDestinationHashBinding(req); err != nil {
+			return err
+		}
+		return nil
+
+	case HashModeV1MiMC:
+		// D1-B only locks the hash mode contract. It intentionally does not
+		// switch /prove to v1 yet because ganc-sys still emits v0 SHA-256
+		// nullifier and destinationHash values.
+		return fmt.Errorf("%w: hash mode %q is defined but not enabled for /prove yet", ErrInvalidProveRequest, s.HashMode())
+
+	default:
+		return fmt.Errorf("%w: unsupported hash mode %q", ErrInvalidProveRequest, s.HashMode())
+	}
 }
 
 func BuildPublicInputs(

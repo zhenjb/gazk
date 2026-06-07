@@ -38,6 +38,8 @@ func (s *HTTPServer) Health(w http.ResponseWriter, r *http.Request) {
 		"status":            "ok",
 		"service":           "gazk",
 		"verificationKeyId": prover.VerificationKeyID,
+		"hashMode":          s.prover.HashMode().String(),
+		"hashV1Id":          prover.HashV1ID,
 	})
 }
 

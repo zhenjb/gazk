@@ -411,3 +411,31 @@ Current limitation:
 
     Smoke proving/verifying keys are generated in-process at startup.
     Proofs are not guaranteed to verify across service restarts until key artifacts are persisted.
+
+
+## Hash mode
+
+`gazk` now has an explicit hash mode contract.
+
+Default:
+
+    GAZK_HASH_MODE=v0-sha256
+
+Supported modes:
+
+    v0-sha256
+    v1-mimc
+
+Current behavior:
+
+    v0-sha256 is the default and is compatible with current ganc-sys.
+    v1-mimc is defined for the next circuit-level stage but is not enabled for /prove yet.
+
+Health exposes the active hash mode:
+
+    curl -s http://localhost:8090/health | jq
+
+Expected fields:
+
+    hashMode
+    hashV1Id
