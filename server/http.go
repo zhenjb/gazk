@@ -37,7 +37,7 @@ func (s *HTTPServer) Health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":            "ok",
 		"service":           "gazk",
-		"verificationKeyId": prover.VerificationKeyID,
+		"verificationKeyId": s.prover.VerificationKeyID(),
 		"hashMode":          s.prover.HashMode().String(),
 		"hashV1Id":          prover.HashV1ID,
 	})

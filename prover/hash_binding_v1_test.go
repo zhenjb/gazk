@@ -6,12 +6,74 @@ import (
 	"github.com/zhenjb/gazk/contract"
 )
 
-func TestProveV1HashModeAcceptsV1AliceVector(t *testing.T) {
+func TestProveV1HashModeAcceptsCircuitV1AliceVector(t *testing.T) {
 	service := NewServiceWithHashMode(HashModeV1MiMC.String())
 
-	_, err := service.Prove(validAliceProveRequestV1())
+	proofBundle, err := service.Prove(validAliceProveRequestV1())
 	if err != nil {
-		t.Fatalf("expected v1 hash mode to accept v1 Alice vector: %v", err)
+		t.Fatalf("expected v1 hash mode to accept circuit v1 Alice vector: %v", err)
+	}
+
+	if proofBundle.VerificationKeyID != VerificationKeyIDV1 {
+		t.Fatalf("expected v1 verification key id %q, got %q", VerificationKeyIDV1, proofBundle.VerificationKeyID)
+	}
+}
+
+func TestVerifyV1HashModeAcceptsGeneratedProof(t *testing.T) {
+	service := NewServiceWithHashMode(HashModeV1MiMC.String())
+
+	req := validAliceProveRequestV1()
+	proofBundle, err := service.Prove(req)
+	if err != nil {
+		t.Fatalf("prove v1 Alice vector: %v", err)
+	}
+
+	err = service.Verify(contract.VerifyRequest{
+		SettlementUpdate: req.SettlementUpdate,
+		BatchCommitments: req.BatchCommitments,
+		ProofBundle:      proofBundle,
+	})
+	if err != nil {
+		t.Fatalf("verify v1 generated proof: %v", err)
+	}
+}
+
+func TestVerifyV1HashModeRejectsTamperedSettlementNullifier(t *testing.T) {
+	service := NewServiceWithHashMode(HashModeV1MiMC.String())
+
+	req := validAliceProveRequestV1()
+	proofBundle, err := service.Prove(req)
+	if err != nil {
+		t.Fatalf("prove v1 Alice vector: %v", err)
+	}
+
+	verifyUpdate := req.SettlementUpdate
+	verifyUpdate.Withdrawals = append([]contract.SettlementWithdrawal(nil), req.SettlementUpdate.Withdrawals...)
+	verifyUpdate.Withdrawals[0].Nullifier = "0x1234"
+
+	err = service.Verify(contract.VerifyRequest{
+		SettlementUpdate: verifyUpdate,
+		BatchCommitments: req.BatchCommitments,
+		ProofBundle:      proofBundle,
+	})
+	if err == nil {
+		t.Fatalf("expected v1 verify to reject tampered settlement nullifier")
+	}
+}
+
+func TestProveV1HashModeRejectsTransitionalServiceLevelV1AliceVector(t *testing.T) {
+	service := NewServiceWithHashMode(HashModeV1MiMC.String())
+
+	req := validAliceProveRequestV1()
+	transitionalNullifier, err := NullifierForV1("mock-user-secret", "1")
+	if err != nil {
+		t.Fatalf("derive transitional v1 nullifier: %v", err)
+	}
+	req.SettlementUpdate.Withdrawals[0].Nullifier = transitionalNullifier
+
+	_, err = service.Prove(req)
+	if err == nil {
+		t.Fatalf("expected v1 hash mode to reject transitional service-level v1 nullifier")
 	}
 }
 
@@ -24,12 +86,12 @@ func TestProveV1HashModeRejectsV0AliceVector(t *testing.T) {
 	}
 }
 
-func TestProveV0HashModeRejectsV1AliceVector(t *testing.T) {
+func TestProveV0HashModeRejectsCircuitV1AliceVector(t *testing.T) {
 	service := NewServiceWithHashMode(HashModeV0SHA256.String())
 
 	_, err := service.Prove(validAliceProveRequestV1())
 	if err == nil {
-		t.Fatalf("expected v0 hash mode to reject v1 Alice vector")
+		t.Fatalf("expected v0 hash mode to reject circuit v1 Alice vector")
 	}
 }
 
@@ -70,7 +132,7 @@ func TestProveV1HashModeStillRejectsInvalidBalanceTransition(t *testing.T) {
 }
 
 func validAliceProveRequestV1() contract.ProveRequest {
-	nullifier, err := NullifierForV1("mock-user-secret", "1")
+	nullifier, err := NullifierCircuitV1Hex("mock-user-secret", "1")
 	if err != nil {
 		panic(err)
 	}

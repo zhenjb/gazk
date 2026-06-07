@@ -12,8 +12,8 @@ func validateNullifierBindingV1(req contract.ProveRequest) error {
 		return fmt.Errorf("%w: witness.accounts is required", ErrInvalidProveRequest)
 	}
 
-	secrets := make(map[string]string, len(req.Witness.Accounts))
 	nonces := make(map[string]string, len(req.Witness.Accounts))
+	secrets := make(map[string]string, len(req.Witness.Accounts))
 
 	for i, account := range req.Witness.Accounts {
 		owner := strings.TrimSpace(account.Owner)
@@ -31,7 +31,7 @@ func validateNullifierBindingV1(req contract.ProveRequest) error {
 			return fmt.Errorf("%w: witness.accounts[%d].nonce is required", ErrInvalidProveRequest, i)
 		}
 
-		if _, exists := secrets[owner]; exists {
+		if _, exists := nonces[owner]; exists {
 			return fmt.Errorf("%w: duplicate witness account owner %q", ErrInvalidProveRequest, owner)
 		}
 
@@ -55,14 +55,14 @@ func validateNullifierBindingV1(req contract.ProveRequest) error {
 			)
 		}
 
-		expected, err := NullifierForV1(secret, nonces[owner])
+		expected, err := NullifierCircuitV1Hex(secret, nonces[owner])
 		if err != nil {
-			return fmt.Errorf("%w: settlementUpdate.withdrawals[%d] v1 nullifier derivation: %v", ErrInvalidProveRequest, i, err)
+			return fmt.Errorf("%w: settlementUpdate.withdrawals[%d] v1 circuit nullifier derivation: %v", ErrInvalidProveRequest, i, err)
 		}
 
 		if withdrawal.Nullifier != expected {
 			return fmt.Errorf(
-				"%w: settlementUpdate.withdrawals[%d].nullifier v1 mismatch: got %q, expected %q",
+				"%w: settlementUpdate.withdrawals[%d].nullifier v1 circuit mismatch: got %q, expected %q",
 				ErrInvalidProveRequest,
 				i,
 				withdrawal.Nullifier,

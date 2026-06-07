@@ -57,7 +57,7 @@ func TestProveRejectsUnknownHashMode(t *testing.T) {
 	}
 }
 
-func TestProveV1HashModeIsEnabledButRequiresV1Hashes(t *testing.T) {
+func TestProveV1HashModeIsEnabledButRequiresCircuitV1Hashes(t *testing.T) {
 	service := NewServiceWithHashMode(HashModeV1MiMC.String())
 
 	_, err := service.Prove(validAliceProveRequest())

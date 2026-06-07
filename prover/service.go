@@ -8,7 +8,10 @@ import (
 	"github.com/zhenjb/gazk/contract"
 )
 
-const VerificationKeyID = "gazk-balance-smoke-v1"
+const (
+	VerificationKeyID   = "gazk-balance-smoke-v1"
+	VerificationKeyIDV1 = "gazk-settlement-v1-mimc-nullifier-smoke-v1"
+)
 
 var (
 	ErrInvalidProveRequest = errors.New("invalid prove request")
@@ -18,23 +21,18 @@ var (
 // Service is the P2 prover boundary.
 //
 // Current stage:
-// - contract-compatible prover
-// - emits final ProofBundle shape
-// - runs a real gnark Groth16 smoke circuit for balance transition
-// - validates nullifier and destinationHash binding according to hash mode
-// - verifies Groth16 proof bytes in /verify
+// - v0-sha256: balance smoke circuit + service-level v0 hash bindings
+// - v1-mimc: combined settlement v1 circuit with balance + nullifier constraint
+// - destinationHash remains service-level validated in v1
 //
-// Hash modes:
-// - v0-sha256: current ganc-sys-compatible placeholder hash
-// - v1-mimc: circuit-friendly MiMC binding path, not the default yet
-//
-// Later stages will bind nullifier, destination hash, state roots, and the
-// 6 settlement public inputs inside the circuit.
+// Later stages will bind destination hash, state roots, and the 6 settlement
+// public inputs inside the circuit.
 type Service struct {
-	balanceEngine *BalanceTransitionEngine
-	engineErr     error
-	hashMode      HashMode
-	hashModeErr   error
+	balanceEngine      *BalanceTransitionEngine
+	settlementV1Engine *SettlementCircuitV1Engine
+	engineErr          error
+	hashMode           HashMode
+	hashModeErr        error
 }
 
 func NewService() *Service {
@@ -44,13 +42,27 @@ func NewService() *Service {
 func NewServiceWithHashMode(rawHashMode string) *Service {
 	mode, modeErr := ParseHashMode(rawHashMode)
 
-	engine, err := NewBalanceTransitionEngine()
-	return &Service{
-		balanceEngine: engine,
-		engineErr:     err,
-		hashMode:      mode,
-		hashModeErr:   modeErr,
+	service := &Service{
+		hashMode:    mode,
+		hashModeErr: modeErr,
 	}
+
+	if modeErr != nil {
+		return service
+	}
+
+	switch mode {
+	case HashModeV1MiMC:
+		engine, err := NewSettlementCircuitV1Engine()
+		service.settlementV1Engine = engine
+		service.engineErr = err
+	default:
+		engine, err := NewBalanceTransitionEngine()
+		service.balanceEngine = engine
+		service.engineErr = err
+	}
+
+	return service
 }
 
 func (s *Service) HashMode() HashMode {
@@ -58,6 +70,15 @@ func (s *Service) HashMode() HashMode {
 		return DefaultHashMode
 	}
 	return s.hashMode
+}
+
+func (s *Service) VerificationKeyID() string {
+	switch s.HashMode() {
+	case HashModeV1MiMC:
+		return VerificationKeyIDV1
+	default:
+		return VerificationKeyID
+	}
 }
 
 func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error) {
@@ -83,7 +104,7 @@ func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error)
 
 	publicInputs := BuildPublicInputs(req.SettlementUpdate, req.BatchCommitments)
 
-	proof, err := s.balanceEngine.BuildProof(req)
+	proof, err := s.buildProof(req)
 	if err != nil {
 		return contract.ProofBundle{}, err
 	}
@@ -91,7 +112,7 @@ func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error)
 	return contract.ProofBundle{
 		Proof:             proof,
 		PublicInputs:      publicInputs,
-		VerificationKeyID: VerificationKeyID,
+		VerificationKeyID: s.VerificationKeyID(),
 	}, nil
 }
 
@@ -126,20 +147,34 @@ func (s *Service) Verify(req contract.VerifyRequest) error {
 		}
 	}
 
-	if req.ProofBundle.VerificationKeyID != VerificationKeyID {
+	if req.ProofBundle.VerificationKeyID != s.VerificationKeyID() {
 		return fmt.Errorf(
 			"%w: verificationKeyId mismatch: got %q, expected %q",
 			ErrInvalidProofBundle,
 			req.ProofBundle.VerificationKeyID,
-			VerificationKeyID,
+			s.VerificationKeyID(),
 		)
 	}
 
-	if err := s.balanceEngine.VerifyProof(req.ProofBundle.Proof); err != nil {
-		return err
-	}
+	return s.verifyProof(req)
+}
 
-	return nil
+func (s *Service) buildProof(req contract.ProveRequest) (string, error) {
+	switch s.HashMode() {
+	case HashModeV1MiMC:
+		return s.settlementV1Engine.BuildProof(req)
+	default:
+		return s.balanceEngine.BuildProof(req)
+	}
+}
+
+func (s *Service) verifyProof(req contract.VerifyRequest) error {
+	switch s.HashMode() {
+	case HashModeV1MiMC:
+		return s.settlementV1Engine.VerifyProof(req)
+	default:
+		return s.balanceEngine.VerifyProof(req.ProofBundle.Proof)
+	}
 }
 
 func (s *Service) validateHashBindings(req contract.ProveRequest) error {
