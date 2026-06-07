@@ -429,7 +429,7 @@ Supported modes:
 Current behavior:
 
     v0-sha256 is the default and is compatible with current ganc-sys.
-    v1-mimc is defined for the next circuit-level stage but is not enabled for /prove yet.
+    v1-mimc is enabled behind GAZK_HASH_MODE=v1-mimc for service-level nullifier and destinationHash validation. It is not the default yet and is not circuit-level binding yet.
 
 Health exposes the active hash mode:
 

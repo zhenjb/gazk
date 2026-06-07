@@ -57,12 +57,12 @@ func TestProveRejectsUnknownHashMode(t *testing.T) {
 	}
 }
 
-func TestProveDoesNotEnableV1HashModeYet(t *testing.T) {
+func TestProveV1HashModeIsEnabledButRequiresV1Hashes(t *testing.T) {
 	service := NewServiceWithHashMode(HashModeV1MiMC.String())
 
 	_, err := service.Prove(validAliceProveRequest())
 	if err == nil {
-		t.Fatalf("expected v1 hash mode to be defined but not enabled for prove yet")
+		t.Fatalf("expected v1 hash mode to reject current v0 Alice vector")
 	}
 }
 

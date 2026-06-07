@@ -21,10 +21,12 @@ var (
 // - contract-compatible prover
 // - emits final ProofBundle shape
 // - runs a real gnark Groth16 smoke circuit for balance transition
-// - validates nullifier binding at service layer using the current GANC placeholder hash
-// - validates destinationHash binding at service layer using the current GANC placeholder hash
+// - validates nullifier and destinationHash binding according to hash mode
 // - verifies Groth16 proof bytes in /verify
-// - exposes hash mode contract; default remains v0-sha256 for ganc-sys compatibility
+//
+// Hash modes:
+// - v0-sha256: current ganc-sys-compatible placeholder hash
+// - v1-mimc: circuit-friendly MiMC binding path, not the default yet
 //
 // Later stages will bind nullifier, destination hash, state roots, and the
 // 6 settlement public inputs inside the circuit.
@@ -152,10 +154,13 @@ func (s *Service) validateHashBindings(req contract.ProveRequest) error {
 		return nil
 
 	case HashModeV1MiMC:
-		// D1-B only locks the hash mode contract. It intentionally does not
-		// switch /prove to v1 yet because ganc-sys still emits v0 SHA-256
-		// nullifier and destinationHash values.
-		return fmt.Errorf("%w: hash mode %q is defined but not enabled for /prove yet", ErrInvalidProveRequest, s.HashMode())
+		if err := validateNullifierBindingV1(req); err != nil {
+			return err
+		}
+		if err := validateDestinationHashBindingV1(req); err != nil {
+			return err
+		}
+		return nil
 
 	default:
 		return fmt.Errorf("%w: unsupported hash mode %q", ErrInvalidProveRequest, s.HashMode())
