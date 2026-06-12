@@ -449,3 +449,21 @@ Set `GAZK_KEY_DIR` to persist keys locally:
     GAZK_KEY_DIR=.gazk/keys go run main.go server
 
 The first start creates key files. Later starts reuse them. The local `.gazk/` directory is ignored by git.
+
+### Verifier artifact export
+
+`gazk` exposes the current verifier artifact for downstream P1/on-chain integration:
+
+    curl -s http://localhost:8090/verifier-artifact | jq
+
+The artifact includes:
+
+    verificationKeyId
+    hashMode
+    curve
+    backend
+    publicInputCount
+    publicInputNames
+    verifyingKey
+
+`verificationKeyId` matches `proofBundle.verificationKeyId`, so a downstream verifier can select the correct verifying key for a submitted proof bundle.

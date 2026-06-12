@@ -27,6 +27,7 @@ func (s *HTTPServer) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", s.Health)
+	mux.HandleFunc("GET /verifier-artifact", s.VerifierArtifact)
 	mux.HandleFunc("POST /prove", s.Prove)
 	mux.HandleFunc("POST /verify", s.Verify)
 
@@ -107,4 +108,19 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, contract.ErrorResponse{
 		Error: message,
 	})
+}
+
+func (s *HTTPServer) VerifierArtifact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	artifact, err := s.prover.VerifierArtifact()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, artifact)
 }

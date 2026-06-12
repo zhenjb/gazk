@@ -419,3 +419,7 @@ func parse0xFieldBigInt(value string, field string) (*big.Int, error) {
 
 	return bytesToBN254FieldBigInt(decoded), nil
 }
+
+func (e *SettlementCircuitV1Engine) VerifyingKey() groth16.VerifyingKey {
+	return e.verifyKey
+}

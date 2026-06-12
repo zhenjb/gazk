@@ -241,3 +241,7 @@ func parseNonNegativeDecimal(value string, field string) (*big.Int, error) {
 
 	return out, nil
 }
+
+func (e *BalanceTransitionEngine) VerifyingKey() groth16.VerifyingKey {
+	return e.verifyKey
+}

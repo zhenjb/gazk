@@ -75,3 +75,17 @@ type VerifyResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+// VerifierArtifact is the portable verifier-side artifact exported by gazk.
+//
+// It lets downstream P1/on-chain integration map a proofBundle.verificationKeyId
+// to the verifying key bytes and public input contract expected by that proof.
+type VerifierArtifact struct {
+	VerificationKeyID string   `json:"verificationKeyId"`
+	HashMode          string   `json:"hashMode"`
+	Curve             string   `json:"curve"`
+	Backend           string   `json:"backend"`
+	PublicInputCount  int      `json:"publicInputCount"`
+	PublicInputNames  []string `json:"publicInputNames"`
+	VerifyingKey      string   `json:"verifyingKey"`
+}
