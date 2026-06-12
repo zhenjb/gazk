@@ -81,14 +81,14 @@ func validateDestinationHashBindingV1(req contract.ProveRequest) error {
 			return fmt.Errorf("%w: settlementUpdate.withdrawals[%d].destination is required", ErrInvalidProveRequest, i)
 		}
 
-		expected, err := DestinationHashForV1(destination)
+		expected, err := DestinationHashCircuitV1Hex(destination)
 		if err != nil {
-			return fmt.Errorf("%w: settlementUpdate.withdrawals[%d] v1 destinationHash derivation: %v", ErrInvalidProveRequest, i, err)
+			return fmt.Errorf("%w: settlementUpdate.withdrawals[%d] v1 circuit destinationHash derivation: %v", ErrInvalidProveRequest, i, err)
 		}
 
 		if withdrawal.DestinationHash != expected {
 			return fmt.Errorf(
-				"%w: settlementUpdate.withdrawals[%d].destinationHash v1 mismatch: got %q, expected %q",
+				"%w: settlementUpdate.withdrawals[%d].destinationHash v1 circuit mismatch: got %q, expected %q",
 				ErrInvalidProveRequest,
 				i,
 				withdrawal.DestinationHash,

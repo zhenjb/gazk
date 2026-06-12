@@ -60,7 +60,7 @@ func TestDestinationHashCircuitV1IsDeterministicAtHelperLevel(t *testing.T) {
 	}
 }
 
-func TestDestinationHashCircuitV1DiffersFromServiceLevelV1(t *testing.T) {
+func TestDestinationHashCircuitV1DiffersFromTransitionalServiceLevelV1(t *testing.T) {
 	serviceV1, err := DestinationHashForV1("cosmos1alice")
 	if err != nil {
 		t.Fatalf("derive service-level v1 destination hash: %v", err)

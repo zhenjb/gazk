@@ -61,19 +61,49 @@ func TestVerifyV1HashModeRejectsTamperedSettlementNullifier(t *testing.T) {
 	}
 }
 
+func TestVerifyV1HashModeRejectsTamperedSettlementDestinationHash(t *testing.T) {
+	service := NewServiceWithHashMode(HashModeV1MiMC.String())
+
+	req := validAliceProveRequestV1()
+	proofBundle, err := service.Prove(req)
+	if err != nil {
+		t.Fatalf("prove v1 Alice vector: %v", err)
+	}
+
+	verifyUpdate := req.SettlementUpdate
+	verifyUpdate.Withdrawals = append([]contract.SettlementWithdrawal(nil), req.SettlementUpdate.Withdrawals...)
+	verifyUpdate.Withdrawals[0].DestinationHash = "0x1234"
+
+	err = service.Verify(contract.VerifyRequest{
+		SettlementUpdate: verifyUpdate,
+		BatchCommitments: req.BatchCommitments,
+		ProofBundle:      proofBundle,
+	})
+	if err == nil {
+		t.Fatalf("expected v1 verify to reject tampered settlement destinationHash")
+	}
+}
+
 func TestProveV1HashModeRejectsTransitionalServiceLevelV1AliceVector(t *testing.T) {
 	service := NewServiceWithHashMode(HashModeV1MiMC.String())
 
 	req := validAliceProveRequestV1()
+
 	transitionalNullifier, err := NullifierForV1("mock-user-secret", "1")
 	if err != nil {
 		t.Fatalf("derive transitional v1 nullifier: %v", err)
 	}
+	transitionalDestinationHash, err := DestinationHashForV1("cosmos1alice")
+	if err != nil {
+		t.Fatalf("derive transitional v1 destination hash: %v", err)
+	}
+
 	req.SettlementUpdate.Withdrawals[0].Nullifier = transitionalNullifier
+	req.SettlementUpdate.Withdrawals[0].DestinationHash = transitionalDestinationHash
 
 	_, err = service.Prove(req)
 	if err == nil {
-		t.Fatalf("expected v1 hash mode to reject transitional service-level v1 nullifier")
+		t.Fatalf("expected v1 hash mode to reject transitional service-level v1 values")
 	}
 }
 
@@ -137,7 +167,7 @@ func validAliceProveRequestV1() contract.ProveRequest {
 		panic(err)
 	}
 
-	destinationHash, err := DestinationHashForV1("cosmos1alice")
+	destinationHash, err := DestinationHashCircuitV1Hex("cosmos1alice")
 	if err != nil {
 		panic(err)
 	}

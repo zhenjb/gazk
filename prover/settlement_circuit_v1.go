@@ -17,16 +17,16 @@ import (
 	"github.com/zhenjb/gazk/contract"
 )
 
-// SettlementCircuitV1 is the first v1 combined settlement smoke circuit.
+// SettlementCircuitV1 is the v1 combined settlement smoke circuit.
 //
 // It proves:
 //
 //  1. oldBalance + depositAmount == newBalance + withdrawAmount
 //  2. expectedNullifier == MiMC(secretField, nonceField)
+//  3. expectedDestinationHash == MiMC(destinationField)
 //
 // Current limitation:
 // - supports the current single-account/single-withdrawal Alice vector.
-// - destinationHash remains service-level validated in D3-B.
 // - state roots and commitment roots remain external public input checks.
 type SettlementCircuitV1 struct {
 	OldBalance     frontend.Variable
@@ -37,6 +37,9 @@ type SettlementCircuitV1 struct {
 	SecretField       frontend.Variable
 	NonceField        frontend.Variable
 	ExpectedNullifier frontend.Variable `gnark:",public"`
+
+	DestinationField        frontend.Variable
+	ExpectedDestinationHash frontend.Variable `gnark:",public"`
 }
 
 func (c *SettlementCircuitV1) Define(api frontend.API) error {
@@ -44,15 +47,24 @@ func (c *SettlementCircuitV1) Define(api frontend.API) error {
 	right := api.Add(c.NewBalance, c.WithdrawAmount)
 	api.AssertIsEqual(left, right)
 
-	hasher, err := stdmimc.NewMiMC(api)
+	nullifierHasher, err := stdmimc.NewMiMC(api)
 	if err != nil {
 		return err
 	}
 
-	hasher.Write(c.SecretField, c.NonceField)
-	computedNullifier := hasher.Sum()
-
+	nullifierHasher.Write(c.SecretField, c.NonceField)
+	computedNullifier := nullifierHasher.Sum()
 	api.AssertIsEqual(computedNullifier, c.ExpectedNullifier)
+
+	destinationHasher, err := stdmimc.NewMiMC(api)
+	if err != nil {
+		return err
+	}
+
+	destinationHasher.Write(c.DestinationField)
+	computedDestinationHash := destinationHasher.Sum()
+	api.AssertIsEqual(computedDestinationHash, c.ExpectedDestinationHash)
+
 	return nil
 }
 
@@ -83,13 +95,18 @@ func NewSettlementCircuitV1Engine() (*SettlementCircuitV1Engine, error) {
 }
 
 type settlementCircuitV1Input struct {
-	OldBalance         *big.Int
-	DepositAmount      *big.Int
-	WithdrawAmount     *big.Int
-	NewBalance         *big.Int
-	SecretField        *big.Int
-	NonceField         *big.Int
-	ExpectedNullifier  *big.Int
+	OldBalance     *big.Int
+	DepositAmount  *big.Int
+	WithdrawAmount *big.Int
+	NewBalance     *big.Int
+
+	SecretField       *big.Int
+	NonceField        *big.Int
+	ExpectedNullifier *big.Int
+
+	DestinationField        *big.Int
+	ExpectedDestinationHash *big.Int
+
 	Owner              string
 	BoundWithdrawalID  string
 	BoundWithdrawalIdx int
@@ -153,19 +170,45 @@ func buildSettlementCircuitV1Input(req contract.ProveRequest) (settlementCircuit
 		)
 	}
 
-	expectedNullifier, err := parse0xFieldBigInt(withdrawal.Nullifier, fmt.Sprintf("settlementUpdate.withdrawals[%d].nullifier", withdrawalIndex))
+	expectedNullifier, err := parse0xFieldBigInt(
+		withdrawal.Nullifier,
+		fmt.Sprintf("settlementUpdate.withdrawals[%d].nullifier", withdrawalIndex),
+	)
+	if err != nil {
+		return settlementCircuitV1Input{}, err
+	}
+
+	destinationField, err := DestinationFieldForV1(withdrawal.Destination)
+	if err != nil {
+		return settlementCircuitV1Input{}, fmt.Errorf(
+			"%w: settlementUpdate.withdrawals[%d] destinationField derivation: %v",
+			ErrInvalidProveRequest,
+			withdrawalIndex,
+			err,
+		)
+	}
+
+	expectedDestinationHash, err := parse0xFieldBigInt(
+		withdrawal.DestinationHash,
+		fmt.Sprintf("settlementUpdate.withdrawals[%d].destinationHash", withdrawalIndex),
+	)
 	if err != nil {
 		return settlementCircuitV1Input{}, err
 	}
 
 	return settlementCircuitV1Input{
-		OldBalance:         balanceInput.OldBalance,
-		DepositAmount:      balanceInput.DepositAmount,
-		WithdrawAmount:     balanceInput.WithdrawAmount,
-		NewBalance:         balanceInput.NewBalance,
-		SecretField:        secretField,
-		NonceField:         nonceField,
-		ExpectedNullifier:  expectedNullifier,
+		OldBalance:     balanceInput.OldBalance,
+		DepositAmount:  balanceInput.DepositAmount,
+		WithdrawAmount: balanceInput.WithdrawAmount,
+		NewBalance:     balanceInput.NewBalance,
+
+		SecretField:       secretField,
+		NonceField:        nonceField,
+		ExpectedNullifier: expectedNullifier,
+
+		DestinationField:        destinationField,
+		ExpectedDestinationHash: expectedDestinationHash,
+
 		Owner:              owner,
 		BoundWithdrawalID:  withdrawal.WithdrawID,
 		BoundWithdrawalIdx: withdrawalIndex,
@@ -179,13 +222,17 @@ func (e *SettlementCircuitV1Engine) BuildProof(req contract.ProveRequest) (strin
 	}
 
 	assignment := SettlementCircuitV1{
-		OldBalance:        input.OldBalance,
-		DepositAmount:     input.DepositAmount,
-		WithdrawAmount:    input.WithdrawAmount,
-		NewBalance:        input.NewBalance,
+		OldBalance:     input.OldBalance,
+		DepositAmount:  input.DepositAmount,
+		WithdrawAmount: input.WithdrawAmount,
+		NewBalance:     input.NewBalance,
+
 		SecretField:       input.SecretField,
 		NonceField:        input.NonceField,
 		ExpectedNullifier: input.ExpectedNullifier,
+
+		DestinationField:        input.DestinationField,
+		ExpectedDestinationHash: input.ExpectedDestinationHash,
 	}
 
 	witness, err := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
@@ -207,7 +254,7 @@ func (e *SettlementCircuitV1Engine) BuildProof(req contract.ProveRequest) (strin
 }
 
 func (e *SettlementCircuitV1Engine) VerifyProof(req contract.VerifyRequest) error {
-	expectedNullifier, err := expectedSettlementCircuitV1PublicNullifier(req.SettlementUpdate)
+	publicInputs, err := expectedSettlementCircuitV1PublicInputs(req.SettlementUpdate)
 	if err != nil {
 		return err
 	}
@@ -223,7 +270,8 @@ func (e *SettlementCircuitV1Engine) VerifyProof(req contract.VerifyRequest) erro
 	}
 
 	publicAssignment := SettlementCircuitV1{
-		ExpectedNullifier: expectedNullifier,
+		ExpectedNullifier:       publicInputs.ExpectedNullifier,
+		ExpectedDestinationHash: publicInputs.ExpectedDestinationHash,
 	}
 
 	publicWitness, err := frontend.NewWitness(&publicAssignment, ecc.BN254.ScalarField(), frontend.PublicOnly())
@@ -238,16 +286,34 @@ func (e *SettlementCircuitV1Engine) VerifyProof(req contract.VerifyRequest) erro
 	return nil
 }
 
-func expectedSettlementCircuitV1PublicNullifier(update contract.SettlementUpdate) (*big.Int, error) {
+type settlementCircuitV1PublicInputs struct {
+	ExpectedNullifier       *big.Int
+	ExpectedDestinationHash *big.Int
+}
+
+func expectedSettlementCircuitV1PublicInputs(update contract.SettlementUpdate) (settlementCircuitV1PublicInputs, error) {
 	if len(update.Withdrawals) != 1 {
-		return nil, fmt.Errorf(
+		return settlementCircuitV1PublicInputs{}, fmt.Errorf(
 			"%w: settlement circuit v1 verification currently expects exactly one withdrawal, got %d",
 			ErrInvalidProofBundle,
 			len(update.Withdrawals),
 		)
 	}
 
-	return parse0xFieldBigInt(update.Withdrawals[0].Nullifier, "settlementUpdate.withdrawals[0].nullifier")
+	expectedNullifier, err := parse0xFieldBigInt(update.Withdrawals[0].Nullifier, "settlementUpdate.withdrawals[0].nullifier")
+	if err != nil {
+		return settlementCircuitV1PublicInputs{}, err
+	}
+
+	expectedDestinationHash, err := parse0xFieldBigInt(update.Withdrawals[0].DestinationHash, "settlementUpdate.withdrawals[0].destinationHash")
+	if err != nil {
+		return settlementCircuitV1PublicInputs{}, err
+	}
+
+	return settlementCircuitV1PublicInputs{
+		ExpectedNullifier:       expectedNullifier,
+		ExpectedDestinationHash: expectedDestinationHash,
+	}, nil
 }
 
 func decodeProofHex(proofHex string) ([]byte, error) {
@@ -285,11 +351,6 @@ func parse0xFieldBigInt(value string, field string) (*big.Int, error) {
 
 	if len(decoded) == 0 {
 		return nil, fmt.Errorf("%w: %s must not be empty hex", ErrInvalidProveRequest, field)
-	}
-
-	valueBig := new(big.Int).SetBytes(decoded)
-	if valueBig.Sign() < 0 {
-		return nil, fmt.Errorf("%w: %s must be non-negative", ErrInvalidProveRequest, field)
 	}
 
 	return bytesToBN254FieldBigInt(decoded), nil
