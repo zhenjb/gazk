@@ -24,11 +24,15 @@ import (
 //  1. oldBalance + depositAmount == newBalance + withdrawAmount
 //  2. expectedNullifier == MiMC(secretField, nonceField)
 //  3. expectedDestinationHash == MiMC(destinationField)
+//  4. oldStateRoot == MiMC(ownerField, oldBalance)
+//  5. newStateRoot == MiMC(ownerField, newBalance)
 //
 // Current limitation:
 // - supports the current single-account/single-withdrawal Alice vector.
-// - state roots and commitment roots remain external public input checks.
+// - oldStateRoot/newStateRoot are single-account root placeholders.
+// - this is not a Merkle tree/root circuit yet.
 type SettlementCircuitV1 struct {
+	OwnerField     frontend.Variable
 	OldBalance     frontend.Variable
 	DepositAmount  frontend.Variable
 	WithdrawAmount frontend.Variable
@@ -40,6 +44,9 @@ type SettlementCircuitV1 struct {
 
 	DestinationField        frontend.Variable
 	ExpectedDestinationHash frontend.Variable `gnark:",public"`
+
+	OldStateRoot frontend.Variable `gnark:",public"`
+	NewStateRoot frontend.Variable `gnark:",public"`
 }
 
 func (c *SettlementCircuitV1) Define(api frontend.API) error {
@@ -51,7 +58,6 @@ func (c *SettlementCircuitV1) Define(api frontend.API) error {
 	if err != nil {
 		return err
 	}
-
 	nullifierHasher.Write(c.SecretField, c.NonceField)
 	computedNullifier := nullifierHasher.Sum()
 	api.AssertIsEqual(computedNullifier, c.ExpectedNullifier)
@@ -60,10 +66,25 @@ func (c *SettlementCircuitV1) Define(api frontend.API) error {
 	if err != nil {
 		return err
 	}
-
 	destinationHasher.Write(c.DestinationField)
 	computedDestinationHash := destinationHasher.Sum()
 	api.AssertIsEqual(computedDestinationHash, c.ExpectedDestinationHash)
+
+	oldStateHasher, err := stdmimc.NewMiMC(api)
+	if err != nil {
+		return err
+	}
+	oldStateHasher.Write(c.OwnerField, c.OldBalance)
+	computedOldStateRoot := oldStateHasher.Sum()
+	api.AssertIsEqual(computedOldStateRoot, c.OldStateRoot)
+
+	newStateHasher, err := stdmimc.NewMiMC(api)
+	if err != nil {
+		return err
+	}
+	newStateHasher.Write(c.OwnerField, c.NewBalance)
+	computedNewStateRoot := newStateHasher.Sum()
+	api.AssertIsEqual(computedNewStateRoot, c.NewStateRoot)
 
 	return nil
 }
@@ -95,6 +116,7 @@ func NewSettlementCircuitV1Engine() (*SettlementCircuitV1Engine, error) {
 }
 
 type settlementCircuitV1Input struct {
+	OwnerField     *big.Int
 	OldBalance     *big.Int
 	DepositAmount  *big.Int
 	WithdrawAmount *big.Int
@@ -106,6 +128,9 @@ type settlementCircuitV1Input struct {
 
 	DestinationField        *big.Int
 	ExpectedDestinationHash *big.Int
+
+	OldStateRoot *big.Int
+	NewStateRoot *big.Int
 
 	Owner              string
 	BoundWithdrawalID  string
@@ -130,6 +155,11 @@ func buildSettlementCircuitV1Input(req contract.ProveRequest) (settlementCircuit
 	owner := strings.TrimSpace(account.Owner)
 	if owner == "" {
 		return settlementCircuitV1Input{}, fmt.Errorf("%w: witness.accounts[0].owner is required", ErrInvalidProveRequest)
+	}
+
+	ownerField, err := OwnerFieldForV1(owner)
+	if err != nil {
+		return settlementCircuitV1Input{}, fmt.Errorf("%w: ownerField derivation: %v", ErrInvalidProveRequest, err)
 	}
 
 	secretField, err := SecretFieldForV1(account.UserSecret)
@@ -196,7 +226,18 @@ func buildSettlementCircuitV1Input(req contract.ProveRequest) (settlementCircuit
 		return settlementCircuitV1Input{}, err
 	}
 
+	oldStateRoot, err := parse0xFieldBigInt(req.SettlementUpdate.OldStateRoot, "settlementUpdate.oldStateRoot")
+	if err != nil {
+		return settlementCircuitV1Input{}, err
+	}
+
+	newStateRoot, err := parse0xFieldBigInt(req.SettlementUpdate.NewStateRoot, "settlementUpdate.newStateRoot")
+	if err != nil {
+		return settlementCircuitV1Input{}, err
+	}
+
 	return settlementCircuitV1Input{
+		OwnerField:     ownerField,
 		OldBalance:     balanceInput.OldBalance,
 		DepositAmount:  balanceInput.DepositAmount,
 		WithdrawAmount: balanceInput.WithdrawAmount,
@@ -208,6 +249,9 @@ func buildSettlementCircuitV1Input(req contract.ProveRequest) (settlementCircuit
 
 		DestinationField:        destinationField,
 		ExpectedDestinationHash: expectedDestinationHash,
+
+		OldStateRoot: oldStateRoot,
+		NewStateRoot: newStateRoot,
 
 		Owner:              owner,
 		BoundWithdrawalID:  withdrawal.WithdrawID,
@@ -222,6 +266,7 @@ func (e *SettlementCircuitV1Engine) BuildProof(req contract.ProveRequest) (strin
 	}
 
 	assignment := SettlementCircuitV1{
+		OwnerField:     input.OwnerField,
 		OldBalance:     input.OldBalance,
 		DepositAmount:  input.DepositAmount,
 		WithdrawAmount: input.WithdrawAmount,
@@ -233,6 +278,9 @@ func (e *SettlementCircuitV1Engine) BuildProof(req contract.ProveRequest) (strin
 
 		DestinationField:        input.DestinationField,
 		ExpectedDestinationHash: input.ExpectedDestinationHash,
+
+		OldStateRoot: input.OldStateRoot,
+		NewStateRoot: input.NewStateRoot,
 	}
 
 	witness, err := frontend.NewWitness(&assignment, ecc.BN254.ScalarField())
@@ -272,6 +320,8 @@ func (e *SettlementCircuitV1Engine) VerifyProof(req contract.VerifyRequest) erro
 	publicAssignment := SettlementCircuitV1{
 		ExpectedNullifier:       publicInputs.ExpectedNullifier,
 		ExpectedDestinationHash: publicInputs.ExpectedDestinationHash,
+		OldStateRoot:            publicInputs.OldStateRoot,
+		NewStateRoot:            publicInputs.NewStateRoot,
 	}
 
 	publicWitness, err := frontend.NewWitness(&publicAssignment, ecc.BN254.ScalarField(), frontend.PublicOnly())
@@ -289,6 +339,8 @@ func (e *SettlementCircuitV1Engine) VerifyProof(req contract.VerifyRequest) erro
 type settlementCircuitV1PublicInputs struct {
 	ExpectedNullifier       *big.Int
 	ExpectedDestinationHash *big.Int
+	OldStateRoot            *big.Int
+	NewStateRoot            *big.Int
 }
 
 func expectedSettlementCircuitV1PublicInputs(update contract.SettlementUpdate) (settlementCircuitV1PublicInputs, error) {
@@ -310,9 +362,21 @@ func expectedSettlementCircuitV1PublicInputs(update contract.SettlementUpdate) (
 		return settlementCircuitV1PublicInputs{}, err
 	}
 
+	oldStateRoot, err := parse0xFieldBigInt(update.OldStateRoot, "settlementUpdate.oldStateRoot")
+	if err != nil {
+		return settlementCircuitV1PublicInputs{}, err
+	}
+
+	newStateRoot, err := parse0xFieldBigInt(update.NewStateRoot, "settlementUpdate.newStateRoot")
+	if err != nil {
+		return settlementCircuitV1PublicInputs{}, err
+	}
+
 	return settlementCircuitV1PublicInputs{
 		ExpectedNullifier:       expectedNullifier,
 		ExpectedDestinationHash: expectedDestinationHash,
+		OldStateRoot:            oldStateRoot,
+		NewStateRoot:            newStateRoot,
 	}, nil
 }
 

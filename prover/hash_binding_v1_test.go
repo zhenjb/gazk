@@ -84,6 +84,50 @@ func TestVerifyV1HashModeRejectsTamperedSettlementDestinationHash(t *testing.T) 
 	}
 }
 
+func TestVerifyV1HashModeRejectsTamperedOldStateRoot(t *testing.T) {
+	service := NewServiceWithHashMode(HashModeV1MiMC.String())
+
+	req := validAliceProveRequestV1()
+	proofBundle, err := service.Prove(req)
+	if err != nil {
+		t.Fatalf("prove v1 Alice vector: %v", err)
+	}
+
+	verifyUpdate := req.SettlementUpdate
+	verifyUpdate.OldStateRoot = "0x1234"
+
+	err = service.Verify(contract.VerifyRequest{
+		SettlementUpdate: verifyUpdate,
+		BatchCommitments: req.BatchCommitments,
+		ProofBundle:      proofBundle,
+	})
+	if err == nil {
+		t.Fatalf("expected v1 verify to reject tampered oldStateRoot")
+	}
+}
+
+func TestVerifyV1HashModeRejectsTamperedNewStateRoot(t *testing.T) {
+	service := NewServiceWithHashMode(HashModeV1MiMC.String())
+
+	req := validAliceProveRequestV1()
+	proofBundle, err := service.Prove(req)
+	if err != nil {
+		t.Fatalf("prove v1 Alice vector: %v", err)
+	}
+
+	verifyUpdate := req.SettlementUpdate
+	verifyUpdate.NewStateRoot = "0x1234"
+
+	err = service.Verify(contract.VerifyRequest{
+		SettlementUpdate: verifyUpdate,
+		BatchCommitments: req.BatchCommitments,
+		ProofBundle:      proofBundle,
+	})
+	if err == nil {
+		t.Fatalf("expected v1 verify to reject tampered newStateRoot")
+	}
+}
+
 func TestProveV1HashModeRejectsTransitionalServiceLevelV1AliceVector(t *testing.T) {
 	service := NewServiceWithHashMode(HashModeV1MiMC.String())
 
@@ -172,7 +216,19 @@ func validAliceProveRequestV1() contract.ProveRequest {
 		panic(err)
 	}
 
+	oldStateRoot, err := AccountCommitmentCircuitV1Hex("cosmos1alice", "0")
+	if err != nil {
+		panic(err)
+	}
+
+	newStateRoot, err := AccountCommitmentCircuitV1Hex("cosmos1alice", "60")
+	if err != nil {
+		panic(err)
+	}
+
 	req := validAliceProveRequest()
+	req.SettlementUpdate.OldStateRoot = oldStateRoot
+	req.SettlementUpdate.NewStateRoot = newStateRoot
 	req.SettlementUpdate.Withdrawals[0].Nullifier = nullifier
 	req.SettlementUpdate.Withdrawals[0].DestinationHash = destinationHash
 

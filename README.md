@@ -429,7 +429,7 @@ Supported modes:
 Current behavior:
 
     v0-sha256 is the default and is compatible with current ganc-sys.
-    v1-mimc is enabled behind GAZK_HASH_MODE=v1-mimc. In v1 mode, the combined settlement circuit proves balance transition, nullifier binding, and destinationHash binding. It is not the default yet.
+    v1-mimc is enabled behind GAZK_HASH_MODE=v1-mimc. In v1 mode, the combined settlement circuit proves balance transition, nullifier binding, destinationHash binding, and single-account oldStateRoot/newStateRoot account commitment placeholders. It is not the default yet.
 
 Health exposes the active hash mode:
 
