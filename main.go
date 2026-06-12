@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/zhenjb/gazk/bat"
@@ -16,6 +18,15 @@ import (
 const defaultHTTPAddr = ":8090"
 
 func main() {
+
+	if len(os.Args) >= 2 && os.Args[1] == "export-verifier-artifact" {
+		if err := exportVerifierArtifactCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "export verifier artifact: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(os.Args) < 2 {
 		Guide()
 		return
@@ -115,4 +126,40 @@ func getenv(key string, fallback string) string {
 	}
 
 	return value
+}
+
+func exportVerifierArtifactCommand(args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: gazk export-verifier-artifact <output.json>")
+	}
+
+	outputPath := args[0]
+	if outputPath == "" {
+		return fmt.Errorf("output path is required")
+	}
+
+	service := prover.NewService()
+	artifact, err := service.VerifierArtifact()
+	if err != nil {
+		return err
+	}
+
+	raw, err := json.MarshalIndent(artifact, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal verifier artifact: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, append(raw, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write verifier artifact: %w", err)
+	}
+
+	fmt.Printf("exported verifier artifact: %s\n", outputPath)
+	fmt.Printf("verificationKeyId: %s\n", artifact.VerificationKeyID)
+	fmt.Printf("hashMode: %s\n", artifact.HashMode)
+
+	return nil
 }
