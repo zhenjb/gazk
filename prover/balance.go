@@ -62,9 +62,9 @@ func NewBalanceTransitionEngine() (*BalanceTransitionEngine, error) {
 		return nil, fmt.Errorf("compile balance transition circuit: %w", err)
 	}
 
-	provingKey, verifyKey, err := groth16.Setup(ccs)
+	provingKey, verifyKey, err := loadOrSetupGroth16Keys(ccs, configuredKeyDir(), VerificationKeyID)
 	if err != nil {
-		return nil, fmt.Errorf("setup balance transition circuit: %w", err)
+		return nil, fmt.Errorf("load/setup balance transition circuit keys: %w", err)
 	}
 
 	return &BalanceTransitionEngine{

@@ -103,9 +103,9 @@ func NewSettlementCircuitV1Engine() (*SettlementCircuitV1Engine, error) {
 		return nil, fmt.Errorf("compile settlement circuit v1: %w", err)
 	}
 
-	provingKey, verifyKey, err := groth16.Setup(ccs)
+	provingKey, verifyKey, err := loadOrSetupGroth16Keys(ccs, configuredKeyDir(), VerificationKeyIDV1)
 	if err != nil {
-		return nil, fmt.Errorf("setup settlement circuit v1: %w", err)
+		return nil, fmt.Errorf("load/setup settlement circuit v1 keys: %w", err)
 	}
 
 	return &SettlementCircuitV1Engine{

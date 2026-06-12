@@ -439,3 +439,13 @@ Expected fields:
 
     hashMode
     hashV1Id
+
+### Key persistence
+
+By default, gazk keeps Groth16 proving/verifying keys in memory and runs setup when an engine starts.
+
+Set `GAZK_KEY_DIR` to persist keys locally:
+
+    GAZK_KEY_DIR=.gazk/keys go run main.go server
+
+The first start creates key files. Later starts reuse them. The local `.gazk/` directory is ignored by git.
