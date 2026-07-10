@@ -89,3 +89,26 @@ type VerifierArtifact struct {
 	PublicInputNames  []string `json:"publicInputNames"`
 	VerifyingKey      string   `json:"verifyingKey"`
 }
+
+// TradeVerifyRequest is the trade-verifier request envelope (ZK-T02). It mirrors
+// VerifyRequest but carries the caller-reconstructed 8 trade public inputs
+// explicitly, because SettlementUpdate does not carry trades yet.
+type TradeVerifyRequest struct {
+	SettlementUpdate SettlementUpdate `json:"settlementUpdate"`
+	ProofBundle      ProofBundle      `json:"proofBundle"`
+	PublicInputs     []string         `json:"publicInputs"`
+}
+
+// TradeVerifierArtifact is the portable verifier-side contract for the trade
+// circuit. In ZK-T02 it advertises the published vkId + the locked 8
+// public-input layout; Stub=true and VerifyingKey empty until ZK-T09 mints the
+// real key.
+type TradeVerifierArtifact struct {
+	VerificationKeyID string   `json:"verificationKeyId"`
+	Curve             string   `json:"curve"`
+	Backend           string   `json:"backend"`
+	PublicInputCount  int      `json:"publicInputCount"`
+	PublicInputNames  []string `json:"publicInputNames"`
+	VerifyingKey      string   `json:"verifyingKey,omitempty"`
+	Stub              bool     `json:"stub"`
+}

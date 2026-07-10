@@ -28,19 +28,23 @@ func (s *HTTPServer) Routes() http.Handler {
 
 	mux.HandleFunc("GET /health", s.Health)
 	mux.HandleFunc("GET /verifier-artifact", s.VerifierArtifact)
+	mux.HandleFunc("GET /trade-verifier-artifact", s.TradeVerifierArtifact)
 	mux.HandleFunc("POST /prove", s.Prove)
 	mux.HandleFunc("POST /verify", s.Verify)
+	mux.HandleFunc("POST /verify-trade", s.VerifyTrade)
 
 	return mux
 }
 
 func (s *HTTPServer) Health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{
-		"status":            "ok",
-		"service":           "gazk",
-		"verificationKeyId": s.prover.VerificationKeyID(),
-		"hashMode":          s.prover.HashMode().String(),
-		"hashV1Id":          prover.HashV1ID,
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":                 "ok",
+		"service":                "gazk",
+		"verificationKeyId":      s.prover.VerificationKeyID(),
+		"hashMode":               s.prover.HashMode().String(),
+		"hashV1Id":               prover.HashV1ID,
+		"tradeVerificationKeyId": prover.TradeVerificationKeyID,
+		"tradeVerifierStub":      true,
 	})
 }
 
@@ -123,4 +127,33 @@ func (s *HTTPServer) VerifierArtifact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, artifact)
+}
+
+// TradeVerifierArtifact publishes the trade-circuit vkId + locked 8 public-input
+// layout (ZK-T02 stub). P1 binds these now; ZK-T09 fills the real verifying key.
+func (s *HTTPServer) TradeVerifierArtifact(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.prover.TradeVerifierArtifact())
+}
+
+// VerifyTrade runs the STUB trade verifier (ZK-T02, accept-any). It returns
+// {valid:true} for a well-formed bundle and {valid:false, error} otherwise. This
+// is NOT cryptographic verification — see prover.VerifyTrade.
+func (s *HTTPServer) VerifyTrade(w http.ResponseWriter, r *http.Request) {
+	var req contract.TradeVerifyRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+
+	err := s.prover.VerifyTrade(req.SettlementUpdate, req.ProofBundle, req.PublicInputs)
+	if err != nil {
+		writeJSON(w, http.StatusOK, contract.VerifyResponse{
+			Valid: false,
+			Error: err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, contract.VerifyResponse{
+		Valid: true,
+	})
 }
