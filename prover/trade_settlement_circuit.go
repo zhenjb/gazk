@@ -128,13 +128,15 @@ func (c *TradeSettlementCircuitV1) Define(api frontend.API) error {
 	}
 	api.AssertIsEqual(newHasher.Sum(), c.NewStateRoot)
 
-	// [2..5] are bound as public inputs (empty sentinels for a trade-only batch).
-	// No internal constraint: the verifier checks them against the expected core
-	// roots supplied alongside the proof.
-	_ = c.DepositsRoot
-	_ = c.WithdrawalsRoot
-	_ = c.NullifiersRoot
-	_ = c.WithdrawOutputsRoot
+	// [2..5] core roots (empty sentinels for a trade-only batch) must still be
+	// BOUND into the proof so the chain's 8-input verification covers them. A
+	// public input with no constraint is dropped by the frontend (gnark), leaving
+	// it uncommitted — a real false-accept surface found in ZK-T11. Range-checking
+	// each forces it into the constraint system without changing root semantics.
+	api.ToBinary(c.DepositsRoot)
+	api.ToBinary(c.WithdrawalsRoot)
+	api.ToBinary(c.NullifiersRoot)
+	api.ToBinary(c.WithdrawOutputsRoot)
 
 	return nil
 }

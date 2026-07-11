@@ -295,6 +295,16 @@ func ProveMultiWithdrawalCircuitV1(input MultiWithdrawalCircuitV1Input) (string,
 	return "0x" + hex.EncodeToString(buf.Bytes()), nil
 }
 
+// proveMultiWithdrawalWithKeys proves using an already-compiled ccs + proving key
+// (so benchmarks can measure prove time without the one-off compile/setup cost).
+func proveMultiWithdrawalWithKeys(ccs constraint.ConstraintSystem, pk groth16.ProvingKey, input MultiWithdrawalCircuitV1Input) (groth16.Proof, error) {
+	witness, err := frontend.NewWitness(&input.circuit, ecc.BN254.ScalarField())
+	if err != nil {
+		return nil, fmt.Errorf("build multi-withdrawal witness: %w", err)
+	}
+	return groth16.Prove(ccs, pk, witness)
+}
+
 // TamperWithdrawalNullifier corrupts a slot's expected nullifier (keeping roots)
 // so the per-withdrawal nullifier check fails.
 func (in *MultiWithdrawalCircuitV1Input) TamperWithdrawalNullifier(slot int) {
