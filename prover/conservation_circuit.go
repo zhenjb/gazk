@@ -86,6 +86,13 @@ type ConservationCircuitV1 struct {
 const AmountRangeBits = 100
 
 func (c *ConservationCircuitV1) Define(api frontend.API) error {
+	applyConservationConstraints(api, c)
+	return nil
+}
+
+// applyConservationConstraints enforces the ZK-T05 conservation + non-negative
+// rules on one fill. Factored out for reuse by the unified trade circuit (ZK-T09).
+func applyConservationConstraints(api frontend.API, c *ConservationCircuitV1) {
 	api.AssertIsBoolean(c.BuyerIsMaker)
 
 	// Range-check every amount (no field wraparound in products/compares).
@@ -123,8 +130,6 @@ func (c *ConservationCircuitV1) Define(api frontend.API) error {
 	// 5. Non-negative after apply: reserved must cover each spend.
 	api.AssertIsLessOrEqual(c.BuyerQuoteOut, c.BuyerReservedQuoteBefore)
 	api.AssertIsLessOrEqual(c.SellerBaseOut, c.SellerReservedBaseBefore)
-
-	return nil
 }
 
 type ConservationCircuitV1Input struct {

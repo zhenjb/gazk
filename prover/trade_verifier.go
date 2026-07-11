@@ -131,12 +131,12 @@ func (s *Service) VerifyTrade(
 }
 
 // TradeVerifierArtifact returns the portable verifier-side contract for the
-// trade circuit: the published vkId and the locked 8 public-input names/count.
-//
-// STUB: VerifyingKey is empty and Stub is true — the real verifying-key bytes
-// land in ZK-T09. P1 uses this to bind the public-input layout + vkId now.
+// trade circuit: the published vkId + locked 8 public-input names/count, and —
+// once ZK-T09 keys are available — the REAL verifying-key bytes B embeds into
+// x/zkdex. Falls back to Stub=true (empty vk) only if the trade engine cannot be
+// initialised.
 func (s *Service) TradeVerifierArtifact() contract.TradeVerifierArtifact {
-	return contract.TradeVerifierArtifact{
+	artifact := contract.TradeVerifierArtifact{
 		VerificationKeyID: TradeVerificationKeyID,
 		Curve:             VerifierArtifactCurve,
 		Backend:           VerifierArtifactBackend,
@@ -144,6 +144,18 @@ func (s *Service) TradeVerifierArtifact() contract.TradeVerifierArtifact {
 		PublicInputNames:  append([]string(nil), TradePublicInputNames...),
 		Stub:              true,
 	}
+
+	engine, err := s.tradeEngine()
+	if err != nil || engine == nil {
+		return artifact
+	}
+	vkHex, err := encodeVerifyingKeyHex(engine.VerifyingKey())
+	if err != nil {
+		return artifact
+	}
+	artifact.VerifyingKey = vkHex
+	artifact.Stub = false
+	return artifact
 }
 
 func validateTradePublicInputs(label string, publicInputs []string) error {

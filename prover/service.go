@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/zhenjb/gazk/contract"
 )
@@ -33,6 +34,23 @@ type Service struct {
 	engineErr          error
 	hashMode           HashMode
 	hashModeErr        error
+
+	// ZK-T09 unified trade circuit engine (pk/vk under vkId gazk-trade-v1).
+	// Lazily initialised: compiling + setup is expensive and only needed when a
+	// caller actually verifies a trade proof or exports the trade verifier
+	// artifact, so most Service constructions (core deposit/withdraw) skip it.
+	tradeEngineOnce sync.Once
+	tradeEngineVal  *TradeCircuitEngine
+	tradeEngineErr  error
+}
+
+// tradeEngine lazily compiles the unified trade circuit and loads/sets up its
+// Groth16 keys (ZK-T09).
+func (s *Service) tradeEngine() (*TradeCircuitEngine, error) {
+	s.tradeEngineOnce.Do(func() {
+		s.tradeEngineVal, s.tradeEngineErr = NewTradeCircuitEngine()
+	})
+	return s.tradeEngineVal, s.tradeEngineErr
 }
 
 func NewService() *Service {

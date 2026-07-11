@@ -55,27 +55,32 @@ type PriceCrossingCircuitV1 struct {
 const PriceRangeBits = 128
 
 func (c *PriceCrossingCircuitV1) Define(api frontend.API) error {
-	// MakerIsBid must be a real boolean.
-	api.AssertIsBoolean(c.MakerIsBid)
+	applyPriceCrossingConstraints(api, c.BidPrice, c.AskPrice, c.FillPrice, c.MakerIsBid)
+	return nil
+}
+
+// applyPriceCrossingConstraints enforces the ZK-T04 price rules on one fill. It
+// is factored out so the unified trade circuit (ZK-T09) can reuse it.
+func applyPriceCrossingConstraints(api frontend.API, bidPrice, askPrice, fillPrice, makerIsBid frontend.Variable) {
+	// makerIsBid must be a real boolean.
+	api.AssertIsBoolean(makerIsBid)
 
 	// Range-check each price so comparisons are unambiguous (no field wraparound).
-	api.ToBinary(c.BidPrice, PriceRangeBits)
-	api.ToBinary(c.AskPrice, PriceRangeBits)
-	api.ToBinary(c.FillPrice, PriceRangeBits)
+	api.ToBinary(bidPrice, PriceRangeBits)
+	api.ToBinary(askPrice, PriceRangeBits)
+	api.ToBinary(fillPrice, PriceRangeBits)
 
 	// Crossing: the lowest ask must be reachable by the highest bid.
-	api.AssertIsLessOrEqual(c.AskPrice, c.BidPrice)
+	api.AssertIsLessOrEqual(askPrice, bidPrice)
 
 	// Determinism: the fill price is the maker's price.
-	makerPrice := api.Select(c.MakerIsBid, c.BidPrice, c.AskPrice)
-	api.AssertIsEqual(c.FillPrice, makerPrice)
+	makerPrice := api.Select(makerIsBid, bidPrice, askPrice)
+	api.AssertIsEqual(fillPrice, makerPrice)
 
 	// Both parties' limits: seller receives >= ask, buyer pays <= bid. Combined
 	// with fill == makerPrice and ask <= bid this pins the fill into [ask, bid].
-	api.AssertIsLessOrEqual(c.AskPrice, c.FillPrice)
-	api.AssertIsLessOrEqual(c.FillPrice, c.BidPrice)
-
-	return nil
+	api.AssertIsLessOrEqual(askPrice, fillPrice)
+	api.AssertIsLessOrEqual(fillPrice, bidPrice)
 }
 
 type PriceCrossingCircuitV1Input struct {

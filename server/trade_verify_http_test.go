@@ -98,8 +98,12 @@ func TestHTTPTradeVerifierArtifactPublishesVkId(t *testing.T) {
 	if artifact.VerificationKeyID != "gazk-trade-v1" {
 		t.Fatalf("vkId = %q, want gazk-trade-v1", artifact.VerificationKeyID)
 	}
-	if artifact.PublicInputCount != 8 || !artifact.Stub {
+	// ZK-T09: real keys → Stub=false + non-empty verifying key.
+	if artifact.PublicInputCount != 8 || artifact.Stub {
 		t.Fatalf("unexpected artifact: count=%d stub=%v", artifact.PublicInputCount, artifact.Stub)
+	}
+	if artifact.VerifyingKey == "" {
+		t.Fatal("expected a real verifying key in the artifact")
 	}
 }
 

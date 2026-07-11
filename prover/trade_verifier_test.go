@@ -150,10 +150,11 @@ func TestTradeVerifierArtifactPublishesVkIdAndLayout(t *testing.T) {
 	if a.PublicInputNames[6] != "batchCommitments.tradesRoot" || a.PublicInputNames[7] != "batchCommitments.ordersRoot" {
 		t.Fatalf("appended layout drift: [6]=%q [7]=%q", a.PublicInputNames[6], a.PublicInputNames[7])
 	}
-	if !a.Stub {
-		t.Fatal("trade verifier artifact must be marked Stub=true")
+	// ZK-T09: keys now exist, so the artifact carries the real verifying key.
+	if a.Stub {
+		t.Fatal("trade verifier artifact must be real (Stub=false) once ZK-T09 keys exist")
 	}
-	if a.VerifyingKey != "" {
-		t.Fatalf("stub verifying key must be empty, got %q", a.VerifyingKey)
+	if a.VerifyingKey == "" {
+		t.Fatal("expected a real verifying key hex in the artifact")
 	}
 }
