@@ -49,6 +49,75 @@ type ProveRequest struct {
 	SettlementUpdate SettlementUpdate `json:"settlementUpdate"`
 	BatchCommitments BatchCommitments `json:"batchCommitments"`
 	Witness          Witness          `json:"witness"`
+
+	// Trade is the ZK-T10 extension (APPEND-only, omitempty): when present, /prove
+	// routes to the unified trade circuit (ZK-T09) and returns an 8-public-input
+	// proofBundle. Core deposit/withdraw batches leave it nil and use the existing
+	// path unchanged, so D's settle_loop HTTP shape is preserved.
+	Trade *TradeProveRequest `json:"trade,omitempty"`
+}
+
+// TradeProveRequest carries the canonical trade batch (orders + fills + the
+// derived witness the circuit needs) for the ZK-T10 /prove trade path. It mirrors
+// the fields of the unified trade circuit's canonical batch.
+type TradeProveRequest struct {
+	Orders []TradeOrder `json:"orders"`
+	Fills  []TradeFill  `json:"fills"`
+
+	BidPrice   string `json:"bidPrice"`
+	AskPrice   string `json:"askPrice"`
+	FillPrice  string `json:"fillPrice"`
+	MakerIsBid bool   `json:"makerIsBid"`
+
+	Conservation TradeConservation `json:"conservation"`
+	Cells        []TradeCell       `json:"cells"`
+
+	DepositsRoot        string `json:"depositsRoot"`
+	WithdrawalsRoot     string `json:"withdrawalsRoot"`
+	NullifiersRoot      string `json:"nullifiersRoot"`
+	WithdrawOutputsRoot string `json:"withdrawOutputsRoot"`
+}
+
+type TradeOrder struct {
+	OrderHash string `json:"orderHash"`
+	Owner     string `json:"owner"`
+	Side      string `json:"side"`
+	Price     string `json:"price"`
+	Qty       string `json:"qty"`
+	Remaining string `json:"remaining"`
+	Filled    bool   `json:"filled"`
+	Sequence  uint64 `json:"sequence"`
+}
+
+type TradeFill struct {
+	TradeID        string `json:"tradeId"`
+	Market         string `json:"market"`
+	MakerOrderHash string `json:"makerOrderHash"`
+	TakerOrderHash string `json:"takerOrderHash"`
+	Price          string `json:"price"`
+	Qty            string `json:"qty"`
+	MakerFee       string `json:"makerFee"`
+	TakerFee       string `json:"takerFee"`
+	Buyer          string `json:"buyer"`
+	Seller         string `json:"seller"`
+}
+
+type TradeConservation struct {
+	Price                    string `json:"price"`
+	Qty                      string `json:"qty"`
+	MakerFee                 string `json:"makerFee"`
+	TakerFee                 string `json:"takerFee"`
+	BuyerIsMaker             bool   `json:"buyerIsMaker"`
+	BuyerReservedQuoteBefore string `json:"buyerReservedQuoteBefore"`
+	SellerReservedBaseBefore string `json:"sellerReservedBaseBefore"`
+}
+
+type TradeCell struct {
+	Owner      string `json:"owner"`
+	Denom      string `json:"denom"`
+	OldBalance string `json:"oldBalance"`
+	DeltaIn    string `json:"deltaIn"`
+	DeltaOut   string `json:"deltaOut"`
 }
 
 type ProofBundle struct {

@@ -100,6 +100,13 @@ func (s *Service) VerificationKeyID() string {
 }
 
 func (s *Service) Prove(req contract.ProveRequest) (contract.ProofBundle, error) {
+	// ZK-T10: a trade batch routes to the unified trade circuit. Core
+	// deposit/withdraw batches (Trade == nil) fall through to the existing path,
+	// so their contract is unchanged.
+	if req.Trade != nil {
+		return s.ProveTrade(*req.Trade)
+	}
+
 	if s.hashModeErr != nil {
 		return contract.ProofBundle{}, s.hashModeErr
 	}

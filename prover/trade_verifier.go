@@ -120,14 +120,21 @@ func (s *Service) VerifyTrade(
 	}
 
 	// 5. Minimal batch-context sanity. The real verifier binds these into the
-	//    proof; the stub only checks they are present so an empty update is
-	//    rejected rather than silently accepted.
+	//    proof; here we check they are present so an empty update is rejected.
 	if strings.TrimSpace(update.OldStateRoot) == "" || strings.TrimSpace(update.NewStateRoot) == "" {
 		return fmt.Errorf("%w: settlementUpdate state roots are required", ErrTradeProofRejected)
 	}
 
-	// STUB: no cryptographic verification. Accept.
-	return nil
+	// 6. ZK-T10: REAL cryptographic verification. Now that /prove produces real
+	//    trade proofs (ZK-T09 keys), VerifyTrade performs the actual Groth16
+	//    verification against the trade vk — the same signature as the ZK-T02
+	//    stub, real body (the anti-drift contract held). If the engine cannot be
+	//    initialised we fail closed rather than accept-any.
+	engine, err := s.tradeEngine()
+	if err != nil {
+		return fmt.Errorf("%w: trade circuit engine unavailable: %v", ErrTradeProofRejected, err)
+	}
+	return engine.VerifyPublicInputs(proofBundle.Proof, publicInputs)
 }
 
 // TradeVerifierArtifact returns the portable verifier-side contract for the

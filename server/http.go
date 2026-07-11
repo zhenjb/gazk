@@ -44,7 +44,8 @@ func (s *HTTPServer) Health(w http.ResponseWriter, r *http.Request) {
 		"hashMode":               s.prover.HashMode().String(),
 		"hashV1Id":               prover.HashV1ID,
 		"tradeVerificationKeyId": prover.TradeVerificationKeyID,
-		"tradeVerifierStub":      true,
+		"tradeVerifierStub":      false,
+		"tradeProve":             true,
 	})
 }
 

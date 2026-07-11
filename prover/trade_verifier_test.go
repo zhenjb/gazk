@@ -38,10 +38,29 @@ func validTradeUpdate() contract.SettlementUpdate {
 	}
 }
 
-func TestVerifyTradeStubAcceptsWellFormedBundle(t *testing.T) {
+// ZK-T10: VerifyTrade now performs REAL Groth16 verification, so it must accept a
+// genuine proof. Prove and verify go through the SAME service so they share one
+// key setup (without GAZK_KEY_DIR each engine setup differs — see ZK-T10 doc).
+func TestVerifyTradeAcceptsRealProof(t *testing.T) {
 	s := NewService()
-	if err := s.VerifyTrade(validTradeUpdate(), validTradeBundle(), validTradePublicInputs()); err != nil {
-		t.Fatalf("stub must accept a well-formed bundle, got: %v", err)
+	bundle, err := s.Prove(contract.ProveRequest{Trade: ptrTradeReq(canonicalTradeProveRequest())})
+	if err != nil {
+		t.Fatalf("prove trade: %v", err)
+	}
+	update := contract.SettlementUpdate{
+		BatchID: "trade-batch-1", OldStateRoot: bundle.PublicInputs[0], NewStateRoot: bundle.PublicInputs[1],
+	}
+	if err := s.VerifyTrade(update, bundle, bundle.PublicInputs); err != nil {
+		t.Fatalf("VerifyTrade must accept a real proof, got: %v", err)
+	}
+}
+
+// A structurally well-formed bundle with a FAKE proof must now be REJECTED by the
+// real verifier (ZK-T10) — the accept-any era is over.
+func TestVerifyTradeRejectsFakeProof(t *testing.T) {
+	s := NewService()
+	if err := s.VerifyTrade(validTradeUpdate(), validTradeBundle(), validTradePublicInputs()); err == nil {
+		t.Fatal("real verifier must reject a fake (non-cryptographic) proof")
 	}
 }
 
