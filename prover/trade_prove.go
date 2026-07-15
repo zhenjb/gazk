@@ -89,15 +89,26 @@ func mapTradeProveRequest(req contract.TradeProveRequest) (CanonicalTradeBatch, 
 			SellerReservedBaseBefore: req.Conservation.SellerReservedBaseBefore,
 		},
 		Cells:               cells,
+		OldStateRoot:        req.OldStateRoot,
+		NewStateRoot:        req.NewStateRoot,
+		TradesRoot:          req.TradesRoot,
+		OrdersRoot:          req.OrdersRoot,
 		DepositsRoot:        req.DepositsRoot,
 		WithdrawalsRoot:     req.WithdrawalsRoot,
 		NullifiersRoot:      req.NullifiersRoot,
 		WithdrawOutputsRoot: req.WithdrawOutputsRoot,
 	}
 
-	// Default the empty core-root sentinels when the caller omits them (trade-only
-	// batch), so a minimal request still produces a valid 8-input vector.
+	// Default the empty state/core roots when the caller omits them (standalone
+	// trade-only request), so a minimal request still produces a valid 8-input vector.
+	// A live batch always supplies the P3 v0 state roots.
 	def := DefaultCanonicalTradeBatch()
+	if batch.OldStateRoot == "" {
+		batch.OldStateRoot = def.OldStateRoot
+	}
+	if batch.NewStateRoot == "" {
+		batch.NewStateRoot = def.NewStateRoot
+	}
 	if batch.DepositsRoot == "" {
 		batch.DepositsRoot = def.DepositsRoot
 	}

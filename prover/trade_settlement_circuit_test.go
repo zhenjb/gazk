@@ -56,6 +56,62 @@ func TestTradeCircuitEngineRejectsTamperedPublicInput(t *testing.T) {
 	}
 }
 
+// TRD-A1: the proof's public inputs [0]/[1]/[6]/[7] are the v0 (SHA-256) WIRE roots
+// — byte-exact the zk_trade_io.md §8 canonical vector — NOT the field-native v1 MiMC
+// values the circuit used to commit. This is what lets a real gazk proof reconcile
+// with the chain's independently-derived v0 roots (the whole point of TRD-A1).
+func TestTradeCircuitBindsV0WireRoots(t *testing.T) {
+	input, err := BuildTradeSettlementCircuitV1Input(DefaultCanonicalTradeBatch())
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	// §8 canonical wire roots (v0 SHA-256).
+	const (
+		v0OldStateRoot = "0xdc03bee69322b6f860de17cc11d8bee7e5cc41ae22e72d3da1065fe8d13db103"
+		v0NewStateRoot = "0xc79bc87c5df4b3cf94560d58f19f2b36631b93a60132efd0c61ac8b474069e61"
+		v0TradesRoot   = "0xe0485ea21f6ea846a9de81a4153afa85ca471933f6910285258c0c2051410dfb"
+		v0OrdersRoot   = "0x798b004fcf98281e699899cf89b853a5849bf8e8fdbf474b7300e770cd4ab3ea"
+	)
+	for _, c := range []struct {
+		idx  int
+		name string
+		want string
+	}{
+		{0, "oldStateRoot", v0OldStateRoot},
+		{1, "newStateRoot", v0NewStateRoot},
+		{6, "tradesRoot", v0TradesRoot},
+		{7, "ordersRoot", v0OrdersRoot},
+	} {
+		if input.PublicInputs[c.idx] != c.want {
+			t.Fatalf("public input [%d] %s = %q, want v0 wire %q", c.idx, c.name, input.PublicInputs[c.idx], c.want)
+		}
+	}
+	// And [6]/[7] equal the standalone v0 helpers P3/chain use (single source).
+	wantOrders, err := OrdersRootV0(DefaultCanonicalTradeBatch().Orders)
+	if err != nil {
+		t.Fatalf("ordersRootV0: %v", err)
+	}
+	if input.PublicInputs[7] != wantOrders {
+		t.Fatalf("ordersRoot [7] = %q, want OrdersRootV0 %q", input.PublicInputs[7], wantOrders)
+	}
+	if input.PublicInputs[6] != TradesRootV0(DefaultCanonicalTradeBatch().Fills) {
+		t.Fatalf("tradesRoot [6] not TradesRootV0")
+	}
+
+	// The proof still round-trips against these v0 public inputs.
+	engine, err := NewTradeCircuitEngine()
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	proof, err := engine.Prove(input)
+	if err != nil {
+		t.Fatalf("prove: %v", err)
+	}
+	if err := engine.VerifyPublicInputs(proof, input.PublicInputs); err != nil {
+		t.Fatalf("verify v0-bound proof: %v", err)
+	}
+}
+
 // vkId is gazk-trade-v1 on both the constant and the exported artifact (the
 // value B and P4 hardcode).
 func TestTradeVerifierArtifactCarriesRealKey(t *testing.T) {

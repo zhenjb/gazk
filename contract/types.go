@@ -72,10 +72,21 @@ type TradeProveRequest struct {
 	Conservation TradeConservation `json:"conservation"`
 	Cells        []TradeCell       `json:"cells"`
 
+	// v0 (SHA-256) wire roots the circuit binds (TRD-A1). oldStateRoot/newStateRoot
+	// are P3's v0 state roots — the caller supplies them because gazk cannot re-derive
+	// P3's state root. [6]/[7] are re-derived by gazk from orders[]/fills[]. Omitted
+	// state roots default to the canonical zk_trade_io.md §8 vector (standalone test).
+	OldStateRoot        string `json:"oldStateRoot,omitempty"`
+	NewStateRoot        string `json:"newStateRoot,omitempty"`
 	DepositsRoot        string `json:"depositsRoot"`
 	WithdrawalsRoot     string `json:"withdrawalsRoot"`
 	NullifiersRoot      string `json:"nullifiersRoot"`
 	WithdrawOutputsRoot string `json:"withdrawOutputsRoot"`
+	// v0 trade roots [6]/[7]. Supplied by a live batch (P3 is the authoritative
+	// deriver + owns the leaf sort order); omitted for the standalone canonical test
+	// where gazk self-derives them via TradesRootV0/OrdersRootV0.
+	TradesRoot string `json:"tradesRoot,omitempty"`
+	OrdersRoot string `json:"ordersRoot,omitempty"`
 }
 
 type TradeOrder struct {

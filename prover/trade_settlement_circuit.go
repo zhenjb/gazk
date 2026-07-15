@@ -11,11 +11,10 @@ import (
 	"github.com/consensys/gnark/constraint"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
-	stdmimc "github.com/consensys/gnark/std/hash/mimc"
 )
 
-// ZK-T09 — the final unified trade circuit whose keys (pk/vk) are generated and
-// published under vkId gazk-trade-v1.
+// ZK-T09 / TRD-A1 — the final unified trade circuit whose keys (pk/vk) are
+// generated and published under vkId gazk-trade-v1.
 //
 // TradeSettlementCircuitV1 composes the trade constraint families built as
 // prototypes in ZK-T04..T08 over the canonical single-fill batch (2 orders + 1
@@ -28,18 +27,29 @@ import (
 // Constraints:
 //   - ZK-T04 price crossing (applyPriceCrossingConstraints) on the fill.
 //   - ZK-T05 conservation + non-negative (applyConservationConstraints) on the fill.
-//   - ZK-T07 tradesRoot/ordersRoot binding (MiMC fold of the leaves) == [6]/[7].
-//     The order leaves carry orderHash + orderNullifier (ZK-T03/T06), so the root
-//     transitively commits them.
-//   - ZK-T08 flat state-root transition over buyer/seller/fee cells == [0]/[1].
-//   - [2..5] are bound as public inputs (empty sentinels for a trade-only batch).
+//   - ZK-T08 per-cell balance transition over buyer/seller/fee cells: newBalance ==
+//     oldBalance + deltaIn - deltaOut, all non-negative (range-checked), no over-debit.
+//   - ALL 8 public roots [0..7] are BOUND via api.ToBinary — the ZK-T11 core pattern.
 //
-// MVP note: the sub-constraint families operate on their own witness copies of
-// the canonical trade; the builder produces a self-consistent witness. Full
-// cross-witness equality (tying the raw price/qty in conservation to the hashed
-// leaf in the root) is a later hardening; ZK-T09's deliverable is the KEY
-// infrastructure (deterministic setup, persisted pk/vk, vkId, vk export, real
-// on/off-chain verify), which is what this enables.
+// TRD-A1 (v0 root binding). PREVIOUSLY this circuit RECOMPUTED tradesRoot/ordersRoot
+// and the state roots in-circuit with MiMC and asserted equality with the public
+// inputs. That made the proof commit the FIELD-NATIVE v1 (MiMC) roots, which differ
+// from the v0 (SHA-256) roots P3/BE/chain carry on the wire (zk_trade_io.md §5/§10) —
+// so a real gazk proof could never reconcile with the chain's derivePublicInputs.
+// It now BINDS the v0 wire roots as opaque public inputs (api.ToBinary, exactly like
+// core [2..5] and ZK-T11): the builder fills [6]/[7] from OrdersRootV0/TradesRootV0
+// (byte-exact P3) and [0]/[1] from P3's v0 state roots. Tamper-evidence is the same
+// as core: the verifier (chain / BE gate) INDEPENDENTLY re-derives every root from the
+// submitted orders[]/fills[] via v0 SHA-256; tamper one field -> the re-derived root
+// differs -> the proof (bound to the original) fails verification. Because ordersRoot
+// commits BOTH order nullifiers (maker+taker, ZK-T06), the two-per-fill records
+// (AGR-2b) are both transitively bound — the chain cannot mark a fabricated nullifier.
+//
+// MVP note: binding the roots opaquely (not re-hashing leaves in-circuit) means the
+// price/conservation/transition witness is not yet tied in-circuit to the specific
+// leaves behind [6]/[7]; that full cross-witness equality (SHA-256 leaf binding) is a
+// later hardening, deferred exactly as the core state root is. The verifier's
+// independent v0 re-derivation is what carries soundness at the MVP stage.
 type TradeSettlementCircuitV1 struct {
 	// ZK-T04 price crossing.
 	BidPrice   frontend.Variable
@@ -50,17 +60,10 @@ type TradeSettlementCircuitV1 struct {
 	// ZK-T05 conservation (nested, all private).
 	Cons ConservationCircuitV1
 
-	// ZK-T07 root binding.
-	OrdersDomainField frontend.Variable
-	TradesDomainField frontend.Variable
-	Orders            [protoOrderCount]orderLeafVars
-	Fills             [protoFillCount]fillLeafVars
+	// ZK-T08 state transition (per-cell delta math; roots bound as v0 below).
+	Cells [maxStateCells]stateCellVars
 
-	// ZK-T08 state transition.
-	StateDomainField frontend.Variable
-	Cells            [maxStateCells]stateCellVars
-
-	// LOCKED 8 public inputs.
+	// LOCKED 8 public inputs (v0 wire roots — bound opaquely, TRD-A1).
 	OldStateRoot        frontend.Variable `gnark:",public"`
 	NewStateRoot        frontend.Variable `gnark:",public"`
 	DepositsRoot        frontend.Variable `gnark:",public"`
@@ -76,38 +79,10 @@ func (c *TradeSettlementCircuitV1) Define(api frontend.API) error {
 	applyPriceCrossingConstraints(api, c.BidPrice, c.AskPrice, c.FillPrice, c.MakerIsBid)
 	applyConservationConstraints(api, &c.Cons)
 
-	// ZK-T07 ordersRoot / tradesRoot binding.
-	ordersHasher, err := stdmimc.NewMiMC(api)
-	if err != nil {
-		return err
-	}
-	ordersHasher.Write(c.OrdersDomainField)
-	for _, o := range c.Orders {
-		ordersHasher.Write(o.OrderHash, o.Owner, o.Nullifier, o.Side, o.Price, o.Qty, o.Remaining, o.Filled)
-	}
-	api.AssertIsEqual(ordersHasher.Sum(), c.OrdersRoot)
-
-	tradesHasher, err := stdmimc.NewMiMC(api)
-	if err != nil {
-		return err
-	}
-	tradesHasher.Write(c.TradesDomainField)
-	for _, f := range c.Fills {
-		tradesHasher.Write(f.TradeID, f.Market, f.MakerOrderHash, f.TakerOrderHash, f.Price, f.Qty, f.MakerFee, f.TakerFee, f.Buyer, f.Seller)
-	}
-	api.AssertIsEqual(tradesHasher.Sum(), c.TradesRoot)
-
-	// ZK-T08 state-root transition.
-	oldHasher, err := stdmimc.NewMiMC(api)
-	if err != nil {
-		return err
-	}
-	oldHasher.Write(c.StateDomainField)
-	for _, cell := range c.Cells {
-		oldHasher.Write(cell.OwnerField, cell.DenomField, cell.OldBalance)
-	}
-	api.AssertIsEqual(oldHasher.Sum(), c.OldStateRoot)
-
+	// ZK-T08 per-cell balance transition: value is conserved cell-by-cell and no
+	// balance goes negative. This stays a real economic constraint on the witness;
+	// the resulting state ROOTS [0]/[1] are bound below as v0 wire values (the chain
+	// re-derives them), rather than recomputed here in v1 MiMC (TRD-A1).
 	for _, cell := range c.Cells {
 		api.ToBinary(cell.OldBalance, AmountRangeBits)
 		api.ToBinary(cell.DeltaIn, AmountRangeBits)
@@ -118,25 +93,19 @@ func (c *TradeSettlementCircuitV1) Define(api frontend.API) error {
 		api.AssertIsLessOrEqual(cell.DeltaOut, api.Add(cell.OldBalance, cell.DeltaIn))
 	}
 
-	newHasher, err := stdmimc.NewMiMC(api)
-	if err != nil {
-		return err
-	}
-	newHasher.Write(c.StateDomainField)
-	for _, cell := range c.Cells {
-		newHasher.Write(cell.OwnerField, cell.DenomField, cell.NewBalance)
-	}
-	api.AssertIsEqual(newHasher.Sum(), c.NewStateRoot)
-
-	// [2..5] core roots (empty sentinels for a trade-only batch) must still be
-	// BOUND into the proof so the chain's 8-input verification covers them. A
-	// public input with no constraint is dropped by the frontend (gnark), leaving
-	// it uncommitted — a real false-accept surface found in ZK-T11. Range-checking
-	// each forces it into the constraint system without changing root semantics.
+	// TRD-A1: BIND all 8 public roots as v0 wire values. A public input with no
+	// constraint is dropped by the frontend (gnark), leaving it uncommitted — a real
+	// false-accept surface found in ZK-T11. Range-checking (ToBinary) each forces it
+	// into the constraint system so the proof commits to EXACTLY these 8 root values;
+	// the chain then verifies its independently-derived v0 roots against them.
+	api.ToBinary(c.OldStateRoot)
+	api.ToBinary(c.NewStateRoot)
 	api.ToBinary(c.DepositsRoot)
 	api.ToBinary(c.WithdrawalsRoot)
 	api.ToBinary(c.NullifiersRoot)
 	api.ToBinary(c.WithdrawOutputsRoot)
+	api.ToBinary(c.TradesRoot)
+	api.ToBinary(c.OrdersRoot)
 
 	return nil
 }
@@ -150,15 +119,17 @@ type TradeCircuitEngine struct {
 	verifyKey  groth16.VerifyingKey
 }
 
-// NewTradeCircuitEngine compiles TradeSettlementCircuitV1 and loads-or-sets-up
-// its keys under vkId gazk-trade-v1.
+// NewTradeCircuitEngine compiles TradeSettlementCircuitV1 and loads-or-sets-up its
+// keys under vkId gazk-trade-v1. Persisted keys are guarded by a circuit fingerprint
+// (loadOrSetupTradeKeys): after any circuit change the stale key is regenerated
+// automatically rather than loaded silently (TRD-A2).
 func NewTradeCircuitEngine() (*TradeCircuitEngine, error) {
 	var circuit TradeSettlementCircuitV1
 	ccs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
 	if err != nil {
 		return nil, fmt.Errorf("compile trade settlement circuit v1: %w", err)
 	}
-	provingKey, verifyKey, err := loadOrSetupGroth16Keys(ccs, configuredKeyDir(), TradeVerificationKeyID)
+	provingKey, verifyKey, err := loadOrSetupTradeKeys(ccs, configuredKeyDir(), TradeVerificationKeyID)
 	if err != nil {
 		return nil, fmt.Errorf("load/setup trade circuit keys: %w", err)
 	}

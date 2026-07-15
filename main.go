@@ -27,6 +27,14 @@ func main() {
 		return
 	}
 
+	if len(os.Args) >= 2 && os.Args[1] == "export-trade-verifier-artifact" {
+		if err := exportTradeVerifierArtifactCommand(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "export trade verifier artifact: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(os.Args) < 2 {
 		Guide()
 		return
@@ -116,6 +124,8 @@ func Guide() {
 	fmt.Println("3. Prove:            POST http://localhost:8090/prove")
 	fmt.Println("4. Verify:           POST http://localhost:8090/verify")
 	fmt.Println("5. Legacy generate:  go run main.go generate [X] [Y]")
+	fmt.Println("6. Export core vk:   go run main.go export-verifier-artifact <out.json>")
+	fmt.Println("7. Export trade vk:  go run main.go export-trade-verifier-artifact <out.json>  (TRD-A2 → B nhúng x/zkdex)")
 	fmt.Println("==================================================")
 }
 
@@ -161,5 +171,38 @@ func exportVerifierArtifactCommand(args []string) error {
 	fmt.Printf("verificationKeyId: %s\n", artifact.VerificationKeyID)
 	fmt.Printf("hashMode: %s\n", artifact.HashMode)
 
+	return nil
+}
+
+// exportTradeVerifierArtifactCommand (TRD-A2) writes the TRADE verifier artifact —
+// the real gazk-trade-v1 verifying key (hex) + vkId + the locked 8 public-input
+// names — for B to embed in x/zkdex (ONCHAIN-T04). It fails closed if the trade
+// engine could not be initialised (Stub=true), so a placeholder vk is never shipped.
+func exportTradeVerifierArtifactCommand(args []string) error {
+	if len(args) != 1 || args[0] == "" {
+		return fmt.Errorf("usage: gazk export-trade-verifier-artifact <output.json>")
+	}
+	outputPath := args[0]
+
+	artifact := prover.NewService().TradeVerifierArtifact()
+	if artifact.Stub || artifact.VerifyingKey == "" {
+		return fmt.Errorf("trade verifier artifact is a stub (no real vk) — the trade engine failed to initialise; check the circuit/keys")
+	}
+
+	raw, err := json.MarshalIndent(artifact, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal trade verifier artifact: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+	if err := os.WriteFile(outputPath, append(raw, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write trade verifier artifact: %w", err)
+	}
+
+	fmt.Printf("exported trade verifier artifact: %s\n", outputPath)
+	fmt.Printf("verificationKeyId: %s\n", artifact.VerificationKeyID)
+	fmt.Printf("publicInputCount:  %d\n", artifact.PublicInputCount)
+	fmt.Printf("verifyingKey:      %d hex chars (embed in x/zkdex)\n", len(artifact.VerifyingKey))
 	return nil
 }
